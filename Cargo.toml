@@ -1,0 +1,40 @@
+[package]
+name = "aegis_os"
+version = "0.1.0"
+edition = "2021"
+authors = ["AegisOS Core Team"]
+description = "A crash-resilient x86_64 operating system in Rust with macOS desktop environment"
+
+[dependencies]
+# Limine Bootloader Protocol bindings
+limine = "0.5.0"
+
+# Spinlock synchronization for no_std kernel globals
+spin = { version = "0.9.8", default-features = false, features = ["spin_mutex", "lock_api_crate"] }
+
+# Safe volatile memory access for MMIO framebuffer
+volatile = "0.4.6"
+
+# Type-safe bitflags for GDT, IDT, Paging, and Hardware registers
+bitflags = "2.4.2"
+
+# Low-level x86_64 structures and instructions
+x86_64 = { version = "0.14.13", default-features = false }
+
+# Kernel heap allocator supporting extern crate alloc
+linked_list_allocator = "0.10.5"
+
+# `build_iso.sh` runs a plain `cargo build`, so this is the profile that actually
+# ships. opt-level 3 keeps debuginfo (addr2line on the kernel ELF still resolves
+# a faulting RIP) while removing the per-pixel call overhead that dominated the
+# software rasterizer.
+[profile.dev]
+panic = "abort"
+opt-level = 3
+debug = true
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+lto = true
+codegen-units = 1

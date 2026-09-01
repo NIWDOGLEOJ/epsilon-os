@@ -1,0 +1,35 @@
+[package]
+name = "aegis_e2e_tests"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aegis_e2e"
+path = "lib.rs"
+
+[[bin]]
+name = "e2e_runner"
+path = "runner.rs"
+
+[[test]]
+name = "tier1_features"
+path = "tier1_features.rs"
+
+[[test]]
+name = "tier2_boundary"
+path = "tier2_boundary.rs"
+
+[[test]]
+name = "tier3_combinations"
+path = "tier3_combinations.rs"
+
+[[test]]
+name = "tier4_scenarios"
+path = "tier4_scenarios.rs"
+
+[[test]]
+name = "m2_adversarial_stress"
+path = "m2_adversarial_stress.rs"
+
+[dependencies]
+
