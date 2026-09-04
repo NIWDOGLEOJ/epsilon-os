@@ -28,6 +28,11 @@ logged, and reaped — the desktop keeps running:
 
 The Crash-Test app has a button for each of those four faults. They all work.
 
+One caveat, because it matters: the isolation mechanism is real, but the fourteen
+applications are not yet using it. They run in Ring 0 as part of the compositor loop;
+the only true Ring 3 processes are the fault-test payloads themselves. A panic inside
+an app today still reaches the kernel panic handler. See [`GOALS.md`](GOALS.md).
+
 ## Build and run
 
 Needs a Rust toolchain with the `x86_64-unknown-none` target, plus `qemu-system-x86_64`
@@ -155,8 +160,10 @@ run the scripts if you need current numbers.
 
 ## Reading order
 
+- [`GOALS.md`](GOALS.md) — what this project is aiming at, and how far the code is
+  from each goal. Read this first for intent.
 - [`HANDOFF.md`](HANDOFF.md) — what was broken, what was fixed, and what to do next.
-  Start here.
+  Start here for the engineering log.
 - [`PROJECT.md`](PROJECT.md) — architecture, feature inventory, and the two
   engineering invariants the kernel depends on.
 - [`TEST_INFRA.md`](TEST_INFRA.md) — test framework and coverage matrix.
