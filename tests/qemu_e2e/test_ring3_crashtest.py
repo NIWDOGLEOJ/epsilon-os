@@ -12,7 +12,13 @@ something specific about what happened rather than that the screen changed.
 import time
 from .harness import QemuHarness
 
-from .ring3_util import click, move_to, assert_compositor_alive
+from .ring3_util import (
+    assert_compositor_alive,
+    click,
+    move_to,
+    launch_ring3,
+    wait_for_boot_settled,
+)
 
 # Window is created at (700, 35) 560x250, so its client area starts here.
 CLIENT_X, CLIENT_Y = 701, 59
@@ -31,18 +37,12 @@ def test_ring3_crashtest_injects_and_survives(qemu: QemuHarness):
     """
     # 1. Both Ring 3 GUI processes came up. Before per-PID surfaces only one
     #    could hold a surface at a time, so this is the load-bearing part.
-    qemu.wait_for_serial(r"\[ELF\] Ring 3 terminal loaded as PID \d+", timeout=20.0)
-    qemu.wait_for_serial(r"\[ELF\] Ring 3 crash-test loaded as PID \d+", timeout=20.0)
-    qemu.wait_for_serial(r"\[USERTERM\] surface mapped, entering event loop", timeout=20.0)
-    qemu.wait_for_serial(r"\[USERCRASH\] surface mapped, entering event loop", timeout=20.0)
     qemu.wait_for_serial(r"AegisOS macOS Desktop Compositor Active", timeout=20.0)
-    time.sleep(1.5)
+    wait_for_boot_settled(qemu)
+    launch_ring3(qemu, "r3fault", expect=r"\[USERCRASH\] surface mapped, entering event loop")
 
-    # Raise it by the strip of titlebar left exposed on the right.
-    move_to(qemu, 1100, 47)
-    click(qemu)
-    time.sleep(0.8)
-
+    # Two Ring 3 GUI processes at once, each with its own surface.
+        
     # 2. Inject the first fault with the pointer. The app logs what it asked
     #    for, which also confirms the click resolved to the button we aimed at.
     move_to(qemu, CLIENT_X + BUTTON_CX, CLIENT_Y + BUTTON_CY[0])

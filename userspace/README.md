@@ -3,7 +3,7 @@
 Programs that run as user processes on AegisOS, outside the kernel's privilege
 level and outside its address space.
 
-Two programs, sharing one library. Neither is kernel code: they cannot call a
+Three programs, sharing one library. Neither is kernel code: they cannot call a
 kernel function, cannot read kernel memory, and reach system state only through
 the syscalls documented in [`../docs/SYSCALL_ABI.md`](../docs/SYSCALL_ABI.md).
 
@@ -11,6 +11,7 @@ the syscalls documented in [`../docs/SYSCALL_ABI.md`](../docs/SYSCALL_ABI.md).
 |---|---|
 | `src/bin/terminal.rs` | The Terminal, ported from `src/apps/terminal.rs` |
 | `src/bin/crash_test.rs` | Crash-Test, ported from `src/apps/crash_test.rs` |
+| `src/bin/activity_monitor.rs` | Activity Monitor, ported from `src/apps/activity_monitor.rs` |
 | `src/lib.rs` | Shared library root |
 | `src/sys.rs` | Syscall shims |
 | `src/surface.rs` | Drawing into the window surface the kernel maps |
@@ -48,6 +49,9 @@ across a context switch would be silently corrupted.
 overflow faults into whatever is mapped below rather than reliably into a hole.
 
 **Surfaces are 640x384.** The kernel maps one per process, up to four at once.
+A window costs a full-surface blit every frame, so these apps start when
+launched -- from Spotlight, or `run r3term` / `r3fault` / `r3proc` in the
+desktop Terminal -- rather than at boot.
 
 ## Toolbar
 

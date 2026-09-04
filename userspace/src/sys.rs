@@ -237,3 +237,10 @@ pub const SYS_SPAWN_FAULT: u64 = 16;
 pub fn spawn_fault(kind: u64) -> i64 {
     unsafe { syscall1(SYS_SPAWN_FAULT, kind) as i64 }
 }
+
+pub const SYS_CPU_USAGE: u64 = 17;
+
+/// System-wide CPU utilisation, 0..100.
+pub fn cpu_usage() -> u64 {
+    unsafe { syscall0(SYS_CPU_USAGE) }
+}

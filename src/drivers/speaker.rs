@@ -170,7 +170,8 @@ pub fn init_speaker() {
 /// Steps the audio player frame counter (call once per 60 FPS compositor frame).
 pub fn update_audio() {
     let _guard = InterruptGuard::acquire();
-    AUDIO_PLAYER.lock().step();
+    let mut audio_player = AUDIO_PLAYER.lock();
+    audio_player.step();
 }
 
 /// Enqueues a single tone for playback.
@@ -178,13 +179,15 @@ pub fn beep(freq_hz: u32, duration_ms: u32) {
     // 60 FPS frame calculation: duration_ms * 60 / 1000 with integer rounding
     let frames = ((duration_ms as u64 * 60 + 500) / 1000).max(1) as u32;
     let _guard = InterruptGuard::acquire();
-    AUDIO_PLAYER.lock().enqueue_notes(&[Note::new(freq_hz, frames)]);
+    let mut audio_player = AUDIO_PLAYER.lock();
+    audio_player.enqueue_notes(&[Note::new(freq_hz, frames)]);
 }
 
 /// Enqueues a slice of notes for playback.
 pub fn play_notes(notes: &[Note]) {
     let _guard = InterruptGuard::acquire();
-    AUDIO_PLAYER.lock().enqueue_notes(notes);
+    let mut audio_player = AUDIO_PLAYER.lock();
+    audio_player.enqueue_notes(notes);
 }
 
 /// Dispatches a predefined system sound effect.
@@ -236,5 +239,6 @@ pub fn play_sound_effect(sfx: SoundEffect) {
     };
 
     let _guard = InterruptGuard::acquire();
-    AUDIO_PLAYER.lock().enqueue_notes(&notes);
+    let mut audio_player = AUDIO_PLAYER.lock();
+    audio_player.enqueue_notes(&notes);
 }

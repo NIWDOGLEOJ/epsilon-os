@@ -227,6 +227,7 @@ pub const SYS_FS_NAME: u64 = 13;
 pub const SYS_FS_READ: u64 = 14;
 pub const SYS_BEEP: u64 = 15;
 pub const SYS_SPAWN_FAULT: u64 = 16;
+pub const SYS_CPU_USAGE: u64 = 17;
 
 /// Negative return codes. Chosen to be recognisable rather than to match errno.
 #[repr(i64)]
@@ -473,6 +474,7 @@ pub extern "C" fn syscall_dispatch(num: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         SYS_FS_READ => sys_fs_read(a1, a2, a3, _a4 as usize),
         SYS_BEEP => sys_beep(a1 as u32, a2 as u32),
         SYS_SPAWN_FAULT => sys_spawn_fault(a1 as usize),
+        SYS_CPU_USAGE => crate::task::get_cpu_usage() as u64,
         _ => SysError::NoSys as i64 as u64,
     }
 }
@@ -548,19 +550,22 @@ fn sys_yield() -> u64 {
             pcb.time_slice_remaining = 0;
         }
     }
-    // Actually give the CPU up rather than returning and letting the caller spin
-    // out the rest of its quantum. `hlt` parks the core until the next timer
-    // tick, which rotates to the next ready task.
+    // Return immediately rather than halting here. Waiting for the tick would
+    // mean enabling interrupts inside a syscall, and this kernel cannot safely
+    // preempt Ring 0 code that has a live stack frame:
     //
-    // This enables interrupts inside a syscall, so the handler is preemptible
-    // from here. That is safe for two reasons: the user `rsp` is saved on this
-    // task's kernel stack rather than in a global, so another process entering
-    // a syscall in the gap cannot corrupt this one's return; and the idle task
-    // already halts this way in Ring 0, so being interrupted in kernel context
-    // is a path the scheduler handles.
-    unsafe {
-        core::arch::asm!("sti; hlt; cli", options(nomem, nostack));
-    }
+    // `InterruptContext` always carries `rsp` and `ss`, but the CPU only pushes
+    // those on a privilege change. An interrupt taken in Ring 0 pushes RIP, CS
+    // and RFLAGS alone, so those two fields alias whatever sits above the frame
+    // -- and `restore_context_to_interrupt` writes them back on every switch.
+    // The existing Ring 0 tasks survive it because they only spin or halt and
+    // have nothing on their stacks worth corrupting; a syscall in progress does
+    // not, and halting here produced an intermittent boot hang, with the timer
+    // ISR spinning forever on the scheduler lock.
+    //
+    // `sysretq` restores the caller's `IF`, so the tick lands a moment later in
+    // Ring 3 -- where the frame layout is the one the ISR assumes -- and rotates
+    // there. The cost is that the caller spins out at most one quantum.
     0
 }
 
@@ -578,8 +583,8 @@ fn sys_surface_map() -> u64 {
     }
 }
 
-/// Writes `"<pid> <state> <cpu%> <name>"` for the process at `index` into a user
-/// buffer. Returns the byte count written, or an error.
+/// Writes `"<pid> <state> <cpu%> <mem_kib> <name>"` for the process at `index`
+/// into a user buffer. Returns the byte count written, or an error.
 fn sys_proc_info(index: usize, out_ptr: u64, out_len: usize) -> u64 {
     use crate::task::pcb::TaskState;
 
@@ -596,11 +601,20 @@ fn sys_proc_info(index: usize, out_ptr: u64, out_len: usize) -> u64 {
         TaskState::Zombie => "ZOMB",
     };
 
+    // Fields are space separated with the free-form name last, so a reader can
+    // split on the first four and take the remainder as the name.
     let mut buf = [0u8; 128];
     let mut writer = SliceWriter::new(&mut buf);
     let _ = core::fmt::write(
         &mut writer,
-        format_args!("{} {} {} {}", info.pid, state, info.cpu_percent, info.name),
+        format_args!(
+            "{} {} {} {} {}",
+            info.pid,
+            state,
+            info.cpu_percent,
+            info.memory_bytes / 1024,
+            info.name
+        ),
     );
     let written = writer.written();
 

@@ -279,7 +279,7 @@ impl TerminalApp {
                 self.print_line("  \x1b[33mcrash <0..3>\x1b[0m     - Inject live Ring 3 hardware fault test");
                 self.print_line("  \x1b[33mcalc <a op b>\x1b[0m    - Inline arithmetic calculator (e.g. 'calc 12 * 8')");
                 self.print_line("  \x1b[33mfree / mem\x1b[0m       - Display physical & heap memory statistics");
-                self.print_line("  \x1b[33mrun <app>\x1b[0m        - Launch app ('calc', 'paint', 'settings', 'files')");
+                self.print_line("  \x1b[33mrun <app>\x1b[0m        - Launch app ('calc', 'paint', 'files', 'r3term', 'r3proc')");
                 self.print_line("  \x1b[33mhistory [-c]\x1b[0m     - Display or clear shell command history");
                 self.print_line("  \x1b[33mecho <text>\x1b[0m      - Echo text back to console");
                 self.print_line("  \x1b[33msymbols\x1b[0m          - Display supplementary unicode font glyphs");
@@ -616,7 +616,7 @@ impl TerminalApp {
             }
             "run" => {
                 if args.is_empty() {
-                    self.print_line("Usage: run <calc|snake|crashtest|monitor|pad|about>");
+                    self.print_line("Usage: run <calc|snake|crashtest|monitor|pad|about|r3term|r3fault|r3proc>");
                 } else {
                     match args[0] {
                         "calc" | "calculator" => {
@@ -654,6 +654,20 @@ impl TerminalApp {
                         "settings" | "preferences" => {
                             self.print_line("[SYS] Launching System Settings...");
                             return Some(AppId::Settings);
+                        }
+                        // Ring 3 applications. They have no dock slot, so this
+                        // and Spotlight are how they are reached.
+                        "r3term" => {
+                            self.print_line("[SYS] Launching Ring 3 Terminal...");
+                            return Some(AppId::UserTerminal);
+                        }
+                        "r3fault" => {
+                            self.print_line("[SYS] Launching Ring 3 Crash-Test...");
+                            return Some(AppId::UserCrashTest);
+                        }
+                        "r3proc" => {
+                            self.print_line("[SYS] Launching Ring 3 Activity Monitor...");
+                            return Some(AppId::UserActivityMonitor);
                         }
                         other => {
                             self.print_line(&format!("Error: Unknown application '{}'", other));

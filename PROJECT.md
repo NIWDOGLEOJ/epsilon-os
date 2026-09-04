@@ -131,7 +131,22 @@ Two invariants the code now depends on. Breaking either reintroduces a hard hang
    `MOUSE_QUEUE`, and to the later subsystem globals (`RAM_FS`, `LOOPBACK_DEVICE`,
    `AGENT_TELEMETRY`). `GLOBAL_FRAME_ALLOCATOR` and `FRAMEBUFFER` have no ISR user.
 
-2. **Interrupt handlers must not allocate.** The global allocator is a plain
+2. **A lock taken under an `InterruptGuard` must be bound to a local, never
+   left as a temporary in a tail expression.** Rust drops a function's local
+   variables *before* the temporaries of its tail expression, so
+
+   ```rust
+   let _guard = InterruptGuard::acquire();
+   SCHEDULER.lock().get_process_list()
+   ```
+
+   re-enables interrupts while the lock is still held. A timer tick in that
+   window spins forever on a lock whose holder can never be resumed. This was
+   an intermittent hang of roughly one boot in ten, and the cause of the
+   long-standing "Interrupts deadlocked" flakiness in the E2E suite. Declare
+   the lock after the guard so it drops first.
+
+3. **Interrupt handlers must not allocate.** The global allocator is a plain
    spinlock, so an ISR allocating while the interrupted code is itself inside the
    allocator deadlocks the machine. `Vec` and `VecDeque` grow on push and are
    therefore unusable in an ISR; use `drivers::ring::EventRing`, which is

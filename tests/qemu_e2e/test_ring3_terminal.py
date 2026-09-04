@@ -14,7 +14,7 @@ import time
 from .harness import QemuHarness
 
 
-from .ring3_util import click, move_to
+from .ring3_util import launch_ring3, wait_for_boot_settled
 
 
 def _type_line(qemu: QemuHarness, text: str):
@@ -33,18 +33,15 @@ def test_ring3_terminal_runs_and_is_isolated(qemu: QemuHarness):
     4. `crash` kills the process and only the process.
     5. The kernel never panics and keeps compositing afterwards.
     """
-    # 1. Program started and got past surface mapping.
-    qemu.wait_for_serial(r"\[ELF\] Ring 3 terminal loaded as PID \d+", timeout=20.0)
+    # 1. Launch it. Ring 3 apps have no process and no window until asked for,
+    #    so the program's own startup lines only appear after this.
+    qemu.wait_for_serial(r"AegisOS macOS Desktop Compositor Active", timeout=20.0)
+    wait_for_boot_settled(qemu)
+    launch_ring3(qemu, "r3term", expect=r"\[USERTERM\] surface mapped, entering event loop")
+    
+    qemu.wait_for_serial(r"\[ELF\] Launched Ring 3 'user_terminal' as PID \d+", timeout=20.0)
     qemu.wait_for_serial(r"\[USERTERM\] Ring 3 terminal starting", timeout=20.0)
     qemu.wait_for_serial(r"\[USERTERM\] surface mapped, entering event loop", timeout=20.0)
-    qemu.wait_for_serial(r"AegisOS macOS Desktop Compositor Active", timeout=20.0)
-    time.sleep(1.5)
-
-    # 2. Raise it. The window opens beneath the in-kernel ones so it does not
-    #    disturb the desktop the other suites expect, so focus it by clicking
-    #    the strip of titlebar left exposed on the right.
-    move_to(qemu, 1130, 312)
-    click(qemu)
 
     before = qemu.screendump()
     assert before.width == 1280 and before.height == 800

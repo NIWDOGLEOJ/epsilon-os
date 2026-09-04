@@ -18,6 +18,28 @@ pub use time::FramePacer;
 ///
 /// Re-enabling is conditional on the saved state, so this nests correctly and is
 /// a no-op inside a handler that is already running with interrupts masked.
+///
+/// # Bind the lock to a local, never leave it a temporary
+///
+/// ```ignore
+/// let _guard = InterruptGuard::acquire();
+/// SCHEDULER.lock().get_process_list()   // WRONG
+/// ```
+///
+/// A function's local variables are dropped *before* the temporaries of its
+/// tail expression. So `_guard` drops first and re-enables interrupts while the
+/// lock is still held, and the lock guard drops after. A timer tick landing in
+/// that window spins forever on a lock whose holder can never be resumed --
+/// which showed up as an intermittent hang roughly one boot in ten, with the
+/// timer ISR pinned on `SCHEDULER`.
+///
+/// Bind it instead, declared after the guard so it drops first:
+///
+/// ```ignore
+/// let _guard = InterruptGuard::acquire();
+/// let scheduler = SCHEDULER.lock();     // RIGHT
+/// scheduler.get_process_list()
+/// ```
 pub struct InterruptGuard {
     was_enabled: bool,
 }

@@ -48,7 +48,7 @@ Return values `>= 0` are results. Negative values are errors:
 | 6 | `surface_dims` | `surface_dims() -> (w<<32)\|h` | Surface dimensions. |
 | 7 | `poll_event` | `poll_event() -> packed` | Next key or mouse event, or 0. |
 | 8 | `proc_count` | `proc_count() -> n` | |
-| 9 | `proc_info` | `proc_info(i, buf, len) -> n` | Writes `"<pid> <state> <cpu%> <name>"`. |
+| 9 | `proc_info` | `proc_info(i, buf, len) -> n` | Writes `"<pid> <state> <cpu%> <mem_kib> <name>"`, name last. |
 | 10 | `mem_stats` | `mem_stats() -> (used_kib<<32)\|total_kib` | |
 | 11 | `kill` | `kill(pid) -> 0` | PID 0 is refused. |
 | 12 | `fs_count` | `fs_count() -> n` | VFS entries. |
@@ -56,6 +56,7 @@ Return values `>= 0` are results. Negative values are errors:
 | 14 | `fs_read` | `fs_read(path, plen, buf, len) -> n` | |
 | 15 | `beep` | `beep(hz, ms) -> 0` | 20..20000 Hz, capped at 1000 ms. |
 | 16 | `spawn_fault` | `spawn_fault(kind) -> pid` | Spawns a process that faults on purpose. See below. |
+| 17 | `cpu_usage` | `cpu_usage() -> percent` | System-wide CPU utilisation, 0..100. |
 
 Example, from `src/task/userprogs.rs`:
 
@@ -128,9 +129,14 @@ surface, and clips the blit to the smaller of the surface and the client rect.
 
 The surface is 640x384 ARGB, fixed rather than negotiated: resizing a window
 shows more or less of it instead of requiring a realloc and a protocol to
-announce the new size. Up to four processes hold one at a time, keyed by PID;
-each is allocated on first use and mapped at the same user address in every
-address space, since each process has its own.
+announce the new size. Up to four processes hold one at a time, keyed by PID; each is allocated on
+first use and mapped at the same user address in every address space, since each
+process has its own.
+
+Compositing one is not free: a window costs a full 640x384 blit every frame.
+Three open at once cut the frame rate by about a third, which is why Ring 3 apps
+start when launched rather than at boot, and why the blit is a clipped row copy
+rather than a per-pixel loop.
 
 The compositor never holds the surface lock across a blit. It copies the frame
 list under a brief guarded lock and reads pixels without one — holding it would
@@ -223,5 +229,5 @@ two-phase zombie reaper when the process dies.
 - No guard page below the stack. An overflow faults, which is how the Ring 3
   terminal's first bug was found, but it faults into whatever is mapped below
   rather than reliably into a hole.
-- Thirteen of the fourteen desktop applications still run in Ring 0. The
-  terminal is the one that moved; see `GOALS.md` for what the rest would need.
+- Eleven of the fourteen desktop applications still run in Ring 0. The Terminal,
+  Crash-Test and Activity Monitor have moved; see `GOALS.md` for the rest.

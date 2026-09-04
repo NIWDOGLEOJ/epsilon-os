@@ -156,7 +156,8 @@ pub fn set_target(pid: Option<u64>) {
 
 pub fn target() -> Option<u64> {
     let _guard = InterruptGuard::acquire();
-    QUEUE.lock().target
+    let queue = QUEUE.lock();
+    queue.target
 }
 
 /// Queues a key event for the current target. Called from the compositor loop

@@ -23,6 +23,7 @@ use std::process::Command;
 const USER_PROGRAMS: &[(&str, &str)] = &[
     ("userspace", "aegis_terminal"),
     ("userspace", "aegis_crash_test"),
+    ("userspace", "aegis_activity_monitor"),
 ];
 
 fn main() {

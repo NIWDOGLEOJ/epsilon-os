@@ -156,6 +156,12 @@ impl Spotlight {
             ("message", AppId::Chat),
             ("network", AppId::Chat),
             ("intranet", AppId::Chat),
+            // Ring 3 applications. Prefixed rather than named after the app
+            // they mirror, so a query for one cannot ambiguously match both --
+            // the matcher tests substrings in both directions.
+            ("r3term", AppId::UserTerminal),
+            ("r3fault", AppId::UserCrashTest),
+            ("r3proc", AppId::UserActivityMonitor),
         ];
 
         for &(name, id) in apps {

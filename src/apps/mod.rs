@@ -110,7 +110,9 @@ impl AppSuite {
             AppId::AboutDialog => self.about.render(win, fb),
             // Content for this window is produced by a Ring 3 process, which
             // draws into a shared surface the kernel only reads.
-            AppId::UserTerminal | AppId::UserCrashTest => render_user_surface(win, fb),
+            AppId::UserTerminal | AppId::UserCrashTest | AppId::UserActivityMonitor => {
+                render_user_surface(win, fb)
+            }
         }
     }
 
@@ -173,7 +175,7 @@ impl AppSuite {
             }
             // A Ring 3 window takes no kernel-side click handling; the process
             // owns everything inside its client rect.
-            AppId::UserTerminal | AppId::UserCrashTest => AppAction::None,
+            AppId::UserTerminal | AppId::UserCrashTest | AppId::UserActivityMonitor => AppAction::None,
             AppId::AboutDialog => {
                 if self.about.handle_click(win, x, y) {
                     AppAction::CloseWindow
@@ -253,7 +255,7 @@ impl AppSuite {
 /// only ever reads here: user code cannot make the compositor write anywhere.
 fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
     use crate::gui::surface::{
-        pixel_from, snapshot_frames, SURFACE_FRAME_COUNT, SURFACE_HEIGHT, SURFACE_WIDTH,
+        copy_row, snapshot_frames, SURFACE_FRAME_COUNT, SURFACE_HEIGHT, SURFACE_WIDTH,
     };
     use crate::memory::PhysAddr;
 
@@ -276,14 +278,13 @@ fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
     let width = core::cmp::min(rect.width as usize, SURFACE_WIDTH);
     let height = core::cmp::min(rect.height as usize, SURFACE_HEIGHT);
 
+    // Row at a time. Per-pixel `draw_pixel` costs a bounds check, a clip test
+    // and an alpha branch each; at 640x384 per window that dominated the frame
+    // and dropped the compositor to about one frame a second once three Ring 3
+    // windows were open.
+    let mut row = [0u32; SURFACE_WIDTH];
     for y in 0..height {
-        for x in 0..width {
-            let argb = pixel_from(frames, x, y);
-            fb.draw_pixel(
-                rect.x + x as i32,
-                rect.y + y as i32,
-                crate::gui::primitives::Color::from_u32(argb),
-            );
-        }
+        copy_row(frames, y, &mut row[..width]);
+        fb.blit_row(rect.x, rect.y + y as i32, &row[..width]);
     }
 }

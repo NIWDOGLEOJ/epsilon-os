@@ -156,6 +156,40 @@ pub fn snapshot_frames(pid: u64, out: &mut [PhysAddr; SURFACE_FRAME_COUNT]) -> u
     count
 }
 
+/// Copies one row of a surface into `out`.
+///
+/// Rows are contiguous in the surface's linear layout but the backing frames are
+/// not, so a row can straddle a page boundary -- at 640 pixels it spans at most
+/// two frames. Copying per segment keeps this a memcpy rather than a per-pixel
+/// loop, which is what makes compositing several Ring 3 windows affordable.
+pub fn copy_row(frames: &[PhysAddr], y: usize, out: &mut [u32]) {
+    if y >= SURFACE_HEIGHT {
+        out.fill(0);
+        return;
+    }
+
+    let pixels_per_frame = PAGE_SIZE / 4;
+    let mut written = 0usize;
+    let want = out.len().min(SURFACE_WIDTH);
+
+    while written < want {
+        let pixel_index = y * SURFACE_WIDTH + written;
+        let frame_index = pixel_index / pixels_per_frame;
+        if frame_index >= frames.len() {
+            out[written..].fill(0);
+            return;
+        }
+        let in_frame = pixel_index % pixels_per_frame;
+        let run = core::cmp::min(want - written, pixels_per_frame - in_frame);
+
+        let base = phys_to_virt(frames[frame_index]).as_ptr::<u32>();
+        unsafe {
+            core::ptr::copy_nonoverlapping(base.add(in_frame), out.as_mut_ptr().add(written), run);
+        }
+        written += run;
+    }
+}
+
 /// Reads one pixel from a snapshot taken by [`snapshot_frames`].
 #[inline]
 pub fn pixel_from(frames: &[PhysAddr], x: usize, y: usize) -> u32 {

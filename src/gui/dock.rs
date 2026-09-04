@@ -41,6 +41,8 @@ pub enum AppId {
     UserTerminal,
     /// The Crash-Test demo, likewise drawn by a Ring 3 process.
     UserCrashTest,
+    /// The Activity Monitor, likewise drawn by a Ring 3 process.
+    UserActivityMonitor,
 }
 
 impl AppId {
@@ -79,6 +81,7 @@ impl AppId {
             AppId::AboutDialog => "About AegisOS",
             AppId::UserTerminal => "Terminal (Ring 3)",
             AppId::UserCrashTest => "Crash-Test (Ring 3)",
+            AppId::UserActivityMonitor => "Activity Monitor (Ring 3)",
         }
     }
 }
@@ -152,6 +155,7 @@ pub fn render_dock(
             AppId::AboutDialog => draw_about_icon(fb, icon_x, icon_y),
             AppId::UserTerminal => draw_terminal_icon(fb, icon_x, icon_y),
             AppId::UserCrashTest => draw_crash_icon(fb, icon_x, icon_y),
+            AppId::UserActivityMonitor => draw_pulse_icon(fb, icon_x, icon_y),
         }
 
         // 4. Draw Running Indicator Dot (3px dot below active app)

@@ -73,3 +73,4 @@ pub const USER_CRASH_CODE: [u8; 106] = [
 /// programs with their own linker script, `.rodata` and `.bss`.
 pub const TERMINAL_ELF: &[u8] = include_bytes!(env!("AEGIS_TERMINAL_ELF"));
 pub const CRASH_TEST_ELF: &[u8] = include_bytes!(env!("AEGIS_CRASH_TEST_ELF"));
+pub const ACTIVITY_MONITOR_ELF: &[u8] = include_bytes!(env!("AEGIS_ACTIVITY_MONITOR_ELF"));

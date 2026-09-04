@@ -11,11 +11,19 @@ mouse input, and that a click which kills it kills only it.
 import time
 from .harness import QemuHarness
 
-from .ring3_util import click, move_to, region_brightness, assert_compositor_alive
+from .ring3_util import (
+    wait_for_boot_settled,
+    assert_compositor_alive,
+    click,
+    move_to,
+    launch_ring3,
+    region_brightness,
+)
 
-# Client area origin of the Ring 3 terminal window, and toolbar button centres.
-# Buttons are laid out from x=6, min width 64, gap 8 (userspace/src/bin/terminal.rs).
-CLIENT_X, CLIENT_Y = 601, 324
+# Client area origin of the Ring 3 terminal window as Spotlight opens it, at
+# (500, 250). Toolbar buttons are laid out from x=6, min width 64, gap 8
+# (userspace/src/bin/terminal.rs).
+CLIENT_X, CLIENT_Y = 501, 274
 BUTTON_Y = 15
 BUTTON_CENTRE = {"help": 38, "ps": 110, "free": 182, "ls": 254, "clear": 330, "crash": 410}
 
@@ -38,13 +46,9 @@ def test_ring3_mouse_input_and_isolation(qemu: QemuHarness):
        process acts on them).
     4. Clicking the 'crash' button kills the process and only the process.
     """
-    qemu.wait_for_serial(r"\[USERTERM\] surface mapped, entering event loop", timeout=20.0)
     qemu.wait_for_serial(r"AegisOS macOS Desktop Compositor Active", timeout=20.0)
-    time.sleep(1.5)
-
-    # Raise the Ring 3 window by its exposed titlebar strip.
-    move_to(qemu, 1130, 312)
-    click(qemu)
+    wait_for_boot_settled(qemu)
+    launch_ring3(qemu, "r3term", expect=r"\[USERTERM\] surface mapped, entering event loop")
 
     time.sleep(1.0)
 

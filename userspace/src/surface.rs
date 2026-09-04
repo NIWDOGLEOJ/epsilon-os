@@ -63,6 +63,42 @@ impl Surface {
         }
     }
 
+    /// One-pixel outline, for card borders and table rules.
+    pub fn draw_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, argb: u32) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.fill_rect(x, y, w, 1, argb);
+        self.fill_rect(x, y + h - 1, w, 1, argb);
+        self.fill_rect(x, y, 1, h, argb);
+        self.fill_rect(x + w - 1, y, 1, h, argb);
+    }
+
+    /// A column of `value`/`max` height growing upward from the bottom of a
+    /// bar-chart cell. Used for the CPU history graph, which is a series of
+    /// these rather than a polyline -- bars need no line rasteriser and stay
+    /// readable at one pixel per sample.
+    pub fn draw_bar(
+        &mut self,
+        x: usize,
+        bottom_y: usize,
+        width: usize,
+        max_height: usize,
+        value: u32,
+        max_value: u32,
+        argb: u32,
+    ) {
+        if max_value == 0 || max_height == 0 {
+            return;
+        }
+        let clamped = value.min(max_value) as usize;
+        let height = (clamped * max_height) / max_value as usize;
+        if height == 0 {
+            return;
+        }
+        self.fill_rect(x, bottom_y.saturating_sub(height), width, height, argb);
+    }
+
     pub fn cols(&self) -> usize {
         self.width / FONT_WIDTH
     }

@@ -502,25 +502,29 @@ pub type ZombieQueue = EventRing<ProcessId, 64>;
 /// Initializes the preemptive multitasking scheduler subsystem.
 pub fn init() {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().init();
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.init();
 }
 
 /// Spawns a new task in the kernel scheduler.
 pub fn spawn_process(name: &str, entry: extern "C" fn(), is_user: bool) -> ProcessId {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().spawn_process(name, entry, is_user)
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.spawn_process(name, entry, is_user)
 }
 
 /// Loads and spawns an ELF64 executable in Ring 3.
 pub fn spawn_user_elf(name: &str, image: &[u8]) -> Result<ProcessId, ElfError> {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().spawn_user_elf(name, image)
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.spawn_user_elf(name, image)
 }
 
 /// Spawns a user process executing raw bytecode in lower-half user space.
 pub fn spawn_user_bytecode(name: &str, bytecode: &[u8]) -> ProcessId {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().spawn_user_bytecode(name, bytecode)
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.spawn_user_bytecode(name, bytecode)
 }
 
 /// Spawns an intentional fault test in isolated Ring 3 userspace to prove fault containment.
@@ -577,19 +581,22 @@ pub fn spawn_user_fault_test(fault_type: usize) -> ProcessId {
 /// Kills an active process by PID.
 pub fn kill_process(pid: ProcessId) -> bool {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().kill_process(pid)
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.kill_process(pid)
 }
 
 /// Returns telemetry process list.
 pub fn get_process_list() -> Vec<ProcessInfo> {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().get_process_list()
+    let scheduler = SCHEDULER.lock();
+    scheduler.get_process_list()
 }
 
 /// Returns real-time CPU utilization percentage.
 pub fn get_cpu_usage() -> u32 {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().get_cpu_usage()
+    let scheduler = SCHEDULER.lock();
+    scheduler.get_cpu_usage()
 }
 
 /// Returns memory usage statistics (used_bytes, total_bytes).
@@ -607,13 +614,15 @@ pub fn current_pid() -> ProcessId {
 /// Reaps terminated zombie processes.
 pub fn reap_zombies() -> usize {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().reap_zombies()
+    let mut scheduler = SCHEDULER.lock();
+    scheduler.reap_zombies()
 }
 
 /// Total timer ticks since boot. At `TIMER_HZ` this is the system uptime.
 pub fn get_uptime_ticks() -> u64 {
     let _guard = InterruptGuard::acquire();
-    SCHEDULER.lock().total_ticks
+    let scheduler = SCHEDULER.lock();
+    scheduler.total_ticks
 }
 
 /// Hardware Timer IRQ handler callback registered to IDT vector 32.

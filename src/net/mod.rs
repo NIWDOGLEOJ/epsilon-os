@@ -267,7 +267,8 @@ impl UdpSocket {
         packet.extend_from_slice(payload);
 
         let _guard = InterruptGuard::acquire();
-        LOOPBACK_DEVICE.lock().transmit(&packet);
+        let mut loopback_device = LOOPBACK_DEVICE.lock();
+        loopback_device.transmit(&packet);
 
         Ok(payload.len())
     }
