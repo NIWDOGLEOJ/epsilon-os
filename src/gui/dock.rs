@@ -34,6 +34,11 @@ pub enum AppId {
     Paint,
     Settings,
     AboutDialog,
+    /// A window whose content is drawn by a Ring 3 process into a shared
+    /// surface rather than by kernel code. Deliberately absent from
+    /// [`AppId::ALL`]: it has no dock slot, so adding it does not shift the
+    /// dock's geometry.
+    UserTerminal,
 }
 
 impl AppId {
@@ -70,6 +75,7 @@ impl AppId {
             AppId::Paint => "Aegis Paint",
             AppId::Settings => "System Settings",
             AppId::AboutDialog => "About AegisOS",
+            AppId::UserTerminal => "Terminal (Ring 3)",
         }
     }
 }
@@ -141,6 +147,7 @@ pub fn render_dock(
             AppId::Paint => draw_paint_icon(fb, icon_x, icon_y),
             AppId::Settings => draw_settings_icon(fb, icon_x, icon_y),
             AppId::AboutDialog => draw_about_icon(fb, icon_x, icon_y),
+            AppId::UserTerminal => draw_terminal_icon(fb, icon_x, icon_y),
         }
 
         // 4. Draw Running Indicator Dot (3px dot below active app)

@@ -108,6 +108,9 @@ impl AppSuite {
             AppId::Paint => self.paint.render(win, fb),
             AppId::Settings => self.settings.render(win, fb),
             AppId::AboutDialog => self.about.render(win, fb),
+            // Content for this window is produced by a Ring 3 process, which
+            // draws into a shared surface the kernel only reads.
+            AppId::UserTerminal => render_user_surface(win, fb),
         }
     }
 
@@ -168,6 +171,9 @@ impl AppSuite {
                     SettingsAction::None => AppAction::None,
                 }
             }
+            // A Ring 3 window takes no kernel-side click handling; the process
+            // owns everything inside its client rect.
+            AppId::UserTerminal => AppAction::None,
             AppId::AboutDialog => {
                 if self.about.handle_click(win, x, y) {
                     AppAction::CloseWindow
@@ -239,3 +245,29 @@ impl AppSuite {
     }
 }
 
+
+/// Blits a Ring 3 process's window surface into its client rect.
+///
+/// Clipped to whichever is smaller, so a window larger than the surface shows
+/// background around it and a smaller one shows the top-left corner. The kernel
+/// only ever reads here: user code cannot make the compositor write anywhere.
+fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
+    use crate::gui::surface::{SURFACE, SURFACE_HEIGHT, SURFACE_WIDTH};
+
+    let rect = win.client_rect();
+    let surface = SURFACE.lock();
+
+    let width = core::cmp::min(rect.width as usize, SURFACE_WIDTH);
+    let height = core::cmp::min(rect.height as usize, SURFACE_HEIGHT);
+
+    for y in 0..height {
+        for x in 0..width {
+            let argb = surface.pixel(x, y);
+            fb.draw_pixel(
+                rect.x + x as i32,
+                rect.y + y as i32,
+                crate::gui::primitives::Color::from_u32(argb),
+            );
+        }
+    }
+}

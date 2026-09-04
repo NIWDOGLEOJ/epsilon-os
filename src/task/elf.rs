@@ -47,7 +47,20 @@ const USER_SPACE_END: u64 = 0x0000_8000_0000_0000;
 
 /// Top of the user stack, matching `Scheduler::spawn_user_bytecode`. A loaded
 /// image must not collide with it.
-const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000;
+pub const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000;
+
+/// Stack pages given to a loaded program.
+///
+/// One page is enough for a payload that only faults, and nowhere near enough
+/// for a real program: the Ring 3 terminal's own state is several KiB of fixed
+/// buffers, and a single page put its first frame straight through the bottom
+/// of the stack into unmapped memory. There is no guard page yet, so an
+/// overflow still faults -- it just takes a realistic amount of recursion to
+/// get there.
+pub const USER_STACK_PAGES: usize = 16;
+
+/// Lowest address the stack occupies. Segments must stay clear of it.
+pub const USER_STACK_BOTTOM: u64 = USER_STACK_TOP - (USER_STACK_PAGES * PAGE_SIZE) as u64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElfError {
@@ -190,7 +203,7 @@ fn parse(image: &[u8]) -> Result<(u64, Vec<LoadSegment>), ElfError> {
         if seg_end > USER_SPACE_END || vaddr == 0 {
             return Err(ElfError::SegmentOutOfRange);
         }
-        if seg_end > USER_STACK_TOP - PAGE_SIZE as u64 {
+        if seg_end > USER_STACK_BOTTOM {
             return Err(ElfError::SegmentOutOfRange);
         }
 

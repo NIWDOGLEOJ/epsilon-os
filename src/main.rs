@@ -237,6 +237,17 @@ pub extern "C" fn _start() -> ! {
         Err(e) => serial_println!("[ELF] Failed to load 'elf_hello': {}", e.as_str()),
     }
 
+    let user_terminal_pid = match task::spawn_user_elf("user_terminal", task::userprogs::TERMINAL_ELF) {
+        Ok(pid) => {
+            serial_println!("[ELF] Ring 3 terminal loaded as PID {}.", pid);
+            Some(pid)
+        }
+        Err(e) => {
+            serial_println!("[ELF] Failed to load Ring 3 terminal: {}", e.as_str());
+            None
+        }
+    };
+
     let crash_image = task::elf::build_test_image(&task::userprogs::USER_CRASH_CODE, 0x40_0000);
     match task::spawn_user_elf("elf_crasher", &crash_image) {
         Ok(pid) => serial_println!("[ELF] Loaded 'elf_crasher' as PID {}.", pid),
@@ -255,6 +266,25 @@ pub extern "C" fn _start() -> ! {
     );
 
     // Create initial floating application windows
+    // Ring 3 terminal. Its content comes from the process's shared surface
+    // rather than from kernel code, so no AppSuite entry backs it.
+    //
+    // Created before the in-kernel windows deliberately: z-order follows
+    // creation order, so this sits underneath them and neither steals focus at
+    // boot nor intercepts clicks aimed at the windows above it. Positioned so a
+    // strip of its titlebar stays exposed on the right for raising it.
+    if let Some(pid) = user_terminal_pid {
+        wm.create_window(
+            AppId::UserTerminal,
+            "Terminal (Ring 3)",
+            600,
+            300,
+            660,
+            430,
+            Some(pid),
+        );
+    }
+
     let _w_mon = wm.create_window(
         AppId::ActivityMonitor,
         "Activity Monitor",
@@ -351,6 +381,9 @@ pub extern "C" fn _start() -> ! {
             }
             AppId::Settings => {
                 wm.create_window(AppId::Settings, "System Settings", 160, 90, 540, 380, None);
+            }
+            AppId::UserTerminal => {
+                wm.create_window(AppId::UserTerminal, "Terminal (Ring 3)", 500, 250, 660, 420, None);
             }
             AppId::AboutDialog => {
                 wm.create_window(AppId::AboutDialog, "About AegisOS", 340, 200, 340, 300, None);
@@ -518,12 +551,26 @@ pub extern "C" fn _start() -> ! {
             // Normal application keyboard dispatch
             if let Some(focused) = wm.focused_window() {
                 let app_id = focused.app_id;
-                let launch_req = app_suite.handle_key(app_id, key_ev);
-                if let Some(to_launch) = launch_req {
-                    launch_app_window(to_launch, &mut wm);
+                if app_id == AppId::UserTerminal {
+                    // A Ring 3 window's keys go to the process, not to kernel
+                    // code. It collects them with SYS_POLL_EVENT.
+                    task::uevent::post_key(&key_ev);
+                } else {
+                    let launch_req = app_suite.handle_key(app_id, key_ev);
+                    if let Some(to_launch) = launch_req {
+                        launch_app_window(to_launch, &mut wm);
+                    }
                 }
             }
         }
+
+        // B2. Point the Ring 3 event queue at the focused window's process, so a
+        //     user process only ever receives input while it has focus.
+        let focused_user_pid = wm
+            .focused_window()
+            .filter(|w| w.app_id == AppId::UserTerminal)
+            .and_then(|w| w.pid);
+        task::uevent::set_target(focused_user_pid);
 
         // C. Clean up any terminated zombie tasks
         task::reap_zombies();

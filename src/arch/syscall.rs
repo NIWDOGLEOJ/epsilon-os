@@ -15,6 +15,12 @@
 //! | `rdi`, `rsi`, `rdx`, `r10`, `r8` | arguments 1..5 |
 //! | `rcx`, `r11` | clobbered by the `syscall` instruction itself |
 //!
+//! Every other register is preserved across the call, matching what Linux
+//! promises and therefore what any toolchain targeting this convention will
+//! assume. The entry stub saves the argument registers as well as the
+//! callee-saved set, because the Rust dispatcher it calls treats the argument
+//! registers as scratch.
+//!
 //! Errors come back as negative values (see [`SysError`]); anything `>= 0` is a
 //! successful result.
 //!
@@ -115,6 +121,14 @@ global_asm!(
     syscall_entry:
         mov [rip + SYSCALL_USER_RSP], rsp
         mov rsp, [rip + SYSCALL_KERNEL_RSP]
+        /* Move the saved user rsp onto this task's kernel stack immediately.
+           The global is a two-instruction scratch slot, safe only because
+           FMASK cleared IF so nothing can run in between. Leaving the value
+           there for the duration of the call would be a bug: a syscall that
+           re-enables interrupts can be preempted, and the next process to make
+           a syscall would overwrite it -- returning this one onto a stack
+           pointer belonging to somebody else. */
+        push [rip + SYSCALL_USER_RSP]
 
         push rcx                /* user RIP, for sysretq */
         push r11                /* user RFLAGS, for sysretq */
@@ -124,6 +138,17 @@ global_asm!(
         push r13
         push r14
         push r15
+        /* The argument registers are caller-saved in SysV, so
+           `syscall_dispatch` is free to destroy them. Userspace is promised
+           that only rcx and r11 are clobbered, so they are saved here too --
+           before the shuffle below reads them. 14 pushes keeps rsp 16-byte
+           aligned at the call. */
+        push rdi
+        push rsi
+        push rdx
+        push r10
+        push r8
+        push r9
 
         mov r9, r8              /* arg5 */
         mov r8, r10             /* arg4 */
@@ -131,9 +156,18 @@ global_asm!(
         mov rdx, rsi            /* arg2 */
         mov rsi, rdi            /* arg1 */
         mov rdi, rax            /* syscall number */
+        /* 15 pushes leave rsp 8 mod 16; SysV wants 0 mod 16 at the call. */
+        sub rsp, 8
         call syscall_dispatch
-        /* return value already in rax */
+        add rsp, 8
+        /* return value already in rax, and deliberately not restored */
 
+        pop r9
+        pop r8
+        pop r10
+        pop rdx
+        pop rsi
+        pop rdi
         pop r15
         pop r14
         pop r13
@@ -142,8 +176,7 @@ global_asm!(
         pop rbx
         pop r11
         pop rcx
-
-        mov rsp, [rip + SYSCALL_USER_RSP]
+        pop rsp                 /* user rsp, saved per-task above */
         sysretq
     "#
 );
@@ -182,6 +215,17 @@ pub const SYS_WRITE: u64 = 1;
 pub const SYS_YIELD: u64 = 2;
 pub const SYS_GET_PID: u64 = 3;
 pub const SYS_UPTIME: u64 = 4;
+pub const SYS_SURFACE_MAP: u64 = 5;
+pub const SYS_SURFACE_DIMS: u64 = 6;
+pub const SYS_POLL_EVENT: u64 = 7;
+pub const SYS_PROC_COUNT: u64 = 8;
+pub const SYS_PROC_INFO: u64 = 9;
+pub const SYS_MEM_STATS: u64 = 10;
+pub const SYS_KILL: u64 = 11;
+pub const SYS_FS_COUNT: u64 = 12;
+pub const SYS_FS_NAME: u64 = 13;
+pub const SYS_FS_READ: u64 = 14;
+pub const SYS_BEEP: u64 = 15;
 
 /// Negative return codes. Chosen to be recognisable rather than to match errno.
 #[repr(i64)]
@@ -300,6 +344,103 @@ fn copy_from_user(dest: &mut [u8], user_ptr: u64, len: usize) -> bool {
     true
 }
 
+/// Copies `src` into the current process's address space at `user_ptr`.
+///
+/// The mirror of `copy_from_user`, and additionally requires `WRITABLE` at every
+/// level: a process must not be able to talk the kernel into writing through a
+/// read-only mapping such as its own `.text`.
+fn copy_to_user(user_ptr: u64, src: &[u8]) -> bool {
+    use crate::memory::{phys_to_virt, read_cr3, PAGE_SIZE};
+
+    if src.is_empty() {
+        return true;
+    }
+    match user_ptr.checked_add(src.len() as u64) {
+        Some(end) if end <= USER_SPACE_END => {}
+        _ => return false,
+    }
+
+    let pml4 = read_cr3();
+    let mut copied = 0usize;
+
+    while copied < src.len() {
+        let va = user_ptr + copied as u64;
+        let phys = match translate_user_writable(pml4, VirtAddr::new(va)) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let page_offset = (va as usize) % PAGE_SIZE;
+        let chunk = core::cmp::min(PAGE_SIZE - page_offset, src.len() - copied);
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                src.as_ptr().add(copied),
+                phys_to_virt(phys).as_mut_ptr::<u8>(),
+                chunk,
+            );
+        }
+        copied += chunk;
+    }
+
+    true
+}
+
+/// As `translate_user`, but also requires `WRITABLE` at every level.
+fn translate_user_writable(pml4_phys: PhysAddr, virt: VirtAddr) -> Option<PhysAddr> {
+    use crate::memory::{phys_to_virt, PageTable};
+
+    if virt.as_u64() >= USER_SPACE_END {
+        return None;
+    }
+
+    let needed = PageTableFlags::USER_ACCESSIBLE | PageTableFlags::WRITABLE;
+
+    let pml4 = unsafe { &*phys_to_virt(pml4_phys).as_ptr::<PageTable>() };
+    let e1 = pml4.entries[virt.pml4_index()];
+    if !e1.is_present() || !e1.flags().contains(needed) {
+        return None;
+    }
+
+    let pdpt = unsafe { &*phys_to_virt(e1.addr()).as_ptr::<PageTable>() };
+    let e2 = pdpt.entries[virt.pdpt_index()];
+    if !e2.is_present() || !e2.flags().contains(needed) {
+        return None;
+    }
+    if e2.is_huge() {
+        return Some(PhysAddr::new(e2.addr().as_u64() + (virt.as_u64() & 0x3FFF_FFFF)));
+    }
+
+    let pd = unsafe { &*phys_to_virt(e2.addr()).as_ptr::<PageTable>() };
+    let e3 = pd.entries[virt.pd_index()];
+    if !e3.is_present() || !e3.flags().contains(needed) {
+        return None;
+    }
+    if e3.is_huge() {
+        return Some(PhysAddr::new(e3.addr().as_u64() + (virt.as_u64() & 0x1F_FFFF)));
+    }
+
+    let pt = unsafe { &*phys_to_virt(e3.addr()).as_ptr::<PageTable>() };
+    let e4 = pt.entries[virt.pt_index()];
+    if !e4.is_present() || !e4.flags().contains(needed) {
+        return None;
+    }
+
+    Some(PhysAddr::new(e4.addr().as_u64() + virt.page_offset() as u64))
+}
+
+/// Reads a user string argument into a stack buffer, returning it as `&str`.
+/// Rejects anything longer than the buffer or not valid UTF-8.
+fn read_user_str<'a>(buf: &'a mut [u8], ptr: u64, len: usize) -> Option<&'a str> {
+    if len > buf.len() {
+        return None;
+    }
+    if !copy_from_user(&mut buf[..len], ptr, len) {
+        return None;
+    }
+    core::str::from_utf8(&buf[..len]).ok()
+}
+
 // -----------------------------------------------------------------------------
 // Dispatch
 // -----------------------------------------------------------------------------
@@ -316,6 +457,20 @@ pub extern "C" fn syscall_dispatch(num: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         SYS_YIELD => sys_yield(),
         SYS_GET_PID => crate::task::current_pid() as u64,
         SYS_UPTIME => crate::task::get_uptime_ticks(),
+        SYS_SURFACE_MAP => sys_surface_map(),
+        SYS_SURFACE_DIMS => {
+            ((crate::gui::surface::SURFACE_WIDTH as u64) << 32)
+                | crate::gui::surface::SURFACE_HEIGHT as u64
+        }
+        SYS_POLL_EVENT => crate::task::uevent::poll(crate::task::current_pid()),
+        SYS_PROC_COUNT => crate::task::get_process_list().len() as u64,
+        SYS_PROC_INFO => sys_proc_info(a1 as usize, a2, a3 as usize),
+        SYS_MEM_STATS => sys_mem_stats(),
+        SYS_KILL => sys_kill(a1),
+        SYS_FS_COUNT => crate::fs::get_all_vfs_paths().len() as u64,
+        SYS_FS_NAME => sys_fs_name(a1 as usize, a2, a3 as usize),
+        SYS_FS_READ => sys_fs_read(a1, a2, a3, _a4 as usize),
+        SYS_BEEP => sys_beep(a1 as u32, a2 as u32),
         _ => SysError::NoSys as i64 as u64,
     }
 }
@@ -391,10 +546,157 @@ fn sys_yield() -> u64 {
             pcb.time_slice_remaining = 0;
         }
     }
-    // The next timer tick sees an exhausted quantum and rotates. `sti; hlt` waits
-    // for it; `IF` is restored to the user's saved RFLAGS by `sysretq` regardless.
+    // Actually give the CPU up rather than returning and letting the caller spin
+    // out the rest of its quantum. `hlt` parks the core until the next timer
+    // tick, which rotates to the next ready task.
+    //
+    // This enables interrupts inside a syscall, so the handler is preemptible
+    // from here. That is safe for two reasons: the user `rsp` is saved on this
+    // task's kernel stack rather than in a global, so another process entering
+    // a syscall in the gap cannot corrupt this one's return; and the idle task
+    // already halts this way in Ring 0, so being interrupted in kernel context
+    // is a path the scheduler handles.
     unsafe {
         core::arch::asm!("sti; hlt; cli", options(nomem, nostack));
     }
     0
+}
+
+// -----------------------------------------------------------------------------
+// Window surface, process and filesystem services
+// -----------------------------------------------------------------------------
+
+/// Maps this process's window surface and returns its user base address.
+fn sys_surface_map() -> u64 {
+    use crate::memory::read_cr3;
+    let pid = crate::task::current_pid();
+    match crate::gui::surface::map_for_process(read_cr3(), pid) {
+        Some(addr) => addr,
+        None => SysError::Fault as i64 as u64,
+    }
+}
+
+/// Writes `"<pid> <state> <cpu%> <name>"` for the process at `index` into a user
+/// buffer. Returns the byte count written, or an error.
+fn sys_proc_info(index: usize, out_ptr: u64, out_len: usize) -> u64 {
+    use crate::task::pcb::TaskState;
+
+    let processes = crate::task::get_process_list();
+    let Some(info) = processes.get(index) else {
+        return SysError::Invalid as i64 as u64;
+    };
+
+    let state = match info.state {
+        TaskState::Running => "RUN",
+        TaskState::Ready => "RDY",
+        TaskState::Blocked(_) => "BLK",
+        TaskState::Terminated(_) => "DEAD",
+        TaskState::Zombie => "ZOMB",
+    };
+
+    let mut buf = [0u8; 128];
+    let mut writer = SliceWriter::new(&mut buf);
+    let _ = core::fmt::write(
+        &mut writer,
+        format_args!("{} {} {} {}", info.pid, state, info.cpu_percent, info.name),
+    );
+    let written = writer.written();
+
+    let count = core::cmp::min(written, out_len);
+    if !copy_to_user(out_ptr, &buf[..count]) {
+        return SysError::Fault as i64 as u64;
+    }
+    count as u64
+}
+
+/// Returns `(used_bytes << 32) | total_megabytes`, both saturated to fit.
+fn sys_mem_stats() -> u64 {
+    let (used_bytes, total_bytes) = crate::task::get_memory_stats();
+    let used_kb = (used_bytes / 1024).min(u32::MAX as u64);
+    let total_kb = (total_bytes / 1024).min(u32::MAX as u64);
+    (used_kb << 32) | total_kb
+}
+
+/// Terminates another process. PID 0 (the idle task) is refused, matching the
+/// protection the in-kernel `kill` command already has.
+fn sys_kill(pid: u64) -> u64 {
+    if pid == 0 {
+        return SysError::Invalid as i64 as u64;
+    }
+    if crate::task::kill_process(pid) {
+        0
+    } else {
+        SysError::Invalid as i64 as u64
+    }
+}
+
+/// Writes the VFS path at `index` into a user buffer.
+fn sys_fs_name(index: usize, out_ptr: u64, out_len: usize) -> u64 {
+    let paths = crate::fs::get_all_vfs_paths();
+    let Some(path) = paths.get(index) else {
+        return SysError::Invalid as i64 as u64;
+    };
+
+    let bytes = path.as_bytes();
+    let count = core::cmp::min(bytes.len(), out_len);
+    if !copy_to_user(out_ptr, &bytes[..count]) {
+        return SysError::Fault as i64 as u64;
+    }
+    count as u64
+}
+
+/// Reads a VFS file into a user buffer. Returns bytes read, or an error.
+fn sys_fs_read(path_ptr: u64, path_len: u64, out_ptr: u64, out_len: usize) -> u64 {
+    let mut path_buf = [0u8; 256];
+    let Some(path) = read_user_str(&mut path_buf, path_ptr, path_len as usize) else {
+        return SysError::Fault as i64 as u64;
+    };
+
+    let Ok(contents) = crate::fs::read_file(path) else {
+        return SysError::Invalid as i64 as u64;
+    };
+
+    let count = core::cmp::min(contents.len(), out_len);
+    if !copy_to_user(out_ptr, &contents[..count]) {
+        return SysError::Fault as i64 as u64;
+    }
+    count as u64
+}
+
+/// Plays a tone on the PC speaker. Bounded so a user process cannot pin the
+/// speaker on indefinitely or program a nonsense divisor.
+fn sys_beep(freq_hz: u32, duration_ms: u32) -> u64 {
+    if !(20..=20_000).contains(&freq_hz) {
+        return SysError::Invalid as i64 as u64;
+    }
+    crate::drivers::speaker::beep(freq_hz, duration_ms.min(1000));
+    0
+}
+
+/// `core::fmt::Write` into a fixed slice, so the handlers above can format
+/// without allocating. Interrupts are masked here; the global allocator is a
+/// plain spinlock, and taking it under a mask is exactly what `PROJECT.md`
+/// warns against.
+struct SliceWriter<'a> {
+    buf: &'a mut [u8],
+    pos: usize,
+}
+
+impl<'a> SliceWriter<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+    fn written(&self) -> usize {
+        self.pos
+    }
+}
+
+impl core::fmt::Write for SliceWriter<'_> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let remaining = self.buf.len() - self.pos;
+        let count = core::cmp::min(remaining, s.len());
+        self.buf[self.pos..self.pos + count].copy_from_slice(&s.as_bytes()[..count]);
+        self.pos += count;
+        Ok(())
+    }
 }

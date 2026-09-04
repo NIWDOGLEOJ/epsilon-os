@@ -20,6 +20,13 @@ used later without inventing a private convention.
 | `r8`  | argument 5 |
 | `rcx`, `r11` | clobbered by the `syscall` instruction itself |
 
+Every other register is preserved, matching what Linux promises and therefore
+what any toolchain targeting this convention assumes. The entry stub saves the
+argument registers as well as the callee-saved set, because the Rust dispatcher
+it calls treats the argument registers as scratch. Getting this wrong is not
+subtle and not loud: the Ring 3 terminal's first symptom was a struct-return
+pointer in `rdi` being destroyed across an unrelated syscall.
+
 Return values `>= 0` are results. Negative values are errors:
 
 | Value | Name | Meaning |
@@ -37,6 +44,17 @@ Return values `>= 0` are results. Negative values are errors:
 | 2 | `yield` | `yield() -> 0` | Gives up the rest of the time slice. |
 | 3 | `getpid` | `getpid() -> pid` | |
 | 4 | `uptime` | `uptime() -> ticks` | 100 Hz timer ticks since boot. |
+| 5 | `surface_map` | `surface_map() -> base` | Maps this process's window surface. See below. |
+| 6 | `surface_dims` | `surface_dims() -> (w<<32)\|h` | Surface dimensions. |
+| 7 | `poll_event` | `poll_event() -> packed` | Next input event, or 0. |
+| 8 | `proc_count` | `proc_count() -> n` | |
+| 9 | `proc_info` | `proc_info(i, buf, len) -> n` | Writes `"<pid> <state> <cpu%> <name>"`. |
+| 10 | `mem_stats` | `mem_stats() -> (used_kib<<32)\|total_kib` | |
+| 11 | `kill` | `kill(pid) -> 0` | PID 0 is refused. |
+| 12 | `fs_count` | `fs_count() -> n` | VFS entries. |
+| 13 | `fs_name` | `fs_name(i, buf, len) -> n` | Writes the path at `i`. |
+| 14 | `fs_read` | `fs_read(path, plen, buf, len) -> n` | |
+| 15 | `beep` | `beep(hz, ms) -> 0` | 20..20000 Hz, capped at 1000 ms. |
 
 Example, from `src/task/userprogs.rs`:
 
@@ -95,6 +113,40 @@ completion with interrupts masked. This sidesteps the lock-ordering hazard in
 takes — at the cost of adding handler runtime to interrupt latency. Handlers must
 stay short; `write` caps its buffer at 4 KiB for exactly this reason.
 
+## Drawing: window surfaces
+
+A Ring 0 app draws by being handed `&mut Framebuffer`. A Ring 3 app cannot be
+handed a kernel pointer, so it gets a surface: a block of pixels the kernel
+owns, mapped writable (and `NO_EXECUTE`) into the process at `0x1000_0000`,
+which the compositor blits into that window's client rect each frame.
+
+There is deliberately **no syscall that draws**. Every pixel a user process puts
+on screen goes through memory it owns, so a confused or hostile process can
+corrupt its own window and nothing else — the kernel only ever reads the
+surface, and clips the blit to the smaller of the surface and the client rect.
+
+The surface is 640x384 ARGB, fixed rather than negotiated: resizing a window
+shows more or less of it instead of requiring a realloc and a protocol to
+announce the new size. One surface exists, for one Ring 3 GUI process;
+supporting several means keying the statics in `src/gui/surface.rs` by PID.
+
+## Input: event polling
+
+Keystrokes for a focused Ring 3 window are packed into a `u64` and queued in
+`src/task/uevent.rs`, collected with `SYS_POLL_EVENT`:
+
+```text
+ bits 63..56  event type (1 = key)
+ bits 55..40  key code (ASCII byte, or 0x100.. for Enter, Backspace, arrows)
+ bits   2..0  alt, ctrl, shift
+```
+
+The queue is a fixed-capacity ring, not a `VecDeque`, for the reason
+`PROJECT.md` gives: it is written from the compositor loop and read from syscall
+context with interrupts masked, and a growable collection allocates on push. It
+drops the oldest event when full, so a process that stops polling cannot stall
+the compositor.
+
 ## ELF loading
 
 `src/task/elf.rs` handles `ET_EXEC` ELF64 images for `EM_X86_64`. Position
@@ -117,10 +169,15 @@ two-phase zombie reaper when the process dies.
 
 ## What this does not do yet
 
-- No `fork`, `exec`, `open`, `read`, `mmap` or `brk`. A process gets one address
-  space, one stack, and the calls in the table above.
-- No file descriptor table; `write` special-cases 1 and 2.
+- No `fork`, `exec`, `open`, `mmap` or `brk`. A process gets one address space,
+  a 64 KiB stack, and the calls in the table above.
+- No file descriptor table; `write` special-cases 1 and 2, and there is no
+  `fs_write` yet — the Ring 3 terminal can read the VFS but not modify it.
 - No signals, no threads, no IPC.
 - No `vDSO`, no TLS, no `arch_prctl`, so `fs`/`gs` bases are unset.
-- Applications still run in Ring 0 (see `GOALS.md`). This ABI is what makes
-  moving them out possible; it does not by itself move them.
+- No mouse events; `poll_event` only ever returns keys.
+- No guard page below the stack. An overflow faults, which is how the Ring 3
+  terminal's first bug was found, but it faults into whatever is mapped below
+  rather than reliably into a hole.
+- Thirteen of the fourteen desktop applications still run in Ring 0. The
+  terminal is the one that moved; see `GOALS.md` for what the rest would need.

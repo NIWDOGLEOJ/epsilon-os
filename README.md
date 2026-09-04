@@ -32,9 +32,15 @@ Ring 3 is now somewhere real programs can run: there is a `syscall` ABI and an E
 loader, so a process can be parsed from an image and call into the kernel rather than
 only compute and fault. See [`docs/SYSCALL_ABI.md`](docs/SYSCALL_ABI.md).
 
-One caveat, because it matters: the fourteen applications are not yet using any of
-this. They run in Ring 0 as part of the compositor loop, so a panic inside an app
-still reaches the kernel panic handler. See [`GOALS.md`](GOALS.md).
+The Terminal has moved across that boundary. It is a separately compiled program
+in [`userspace/`](userspace/), loaded from an ELF image into its own address
+space, drawing through a shared surface and reaching the kernel only through
+syscalls. Typing `crash` in it dereferences null and kills the process; the
+desktop keeps compositing.
+
+The caveat that remains: the other thirteen applications still run in Ring 0 as
+part of the compositor loop, so a panic in one of them still reaches the kernel
+panic handler. [`GOALS.md`](GOALS.md) lists what porting them needs.
 
 ## Build and run
 
@@ -63,7 +69,8 @@ Spotlight:
 
 | App | What it does |
 |---|---|
-| Terminal | Shell with 20+ commands, tab completion, history, ANSI colour |
+| Terminal | Shell with 20+ commands, tab completion, history, ANSI colour (Ring 0) |
+| Terminal (Ring 3) | The same shell as a user process — see [`userspace/`](userspace/) |
 | Activity Monitor | Live CPU/RAM graphs, process table with Kill |
 | Crash-Test | One button per fault class (#PF null, #PF OOB, #DE, #UD) |
 | AegisPad | Multi-tab editor: line numbers, find/replace, syntax highlighting |
@@ -134,7 +141,7 @@ Two suites exercise the real kernel, and one older tree does not.
 QEMU, drives it through the QEMU monitor (`sendkey`, mouse move/click), parses COM1
 serial output, and captures framebuffer screendumps as PPM to assert on colour variety
 and GUI chrome. It also reads `info registers` to check `RFLAGS.IF` stays set and `RIP`
-keeps advancing under load. 23 test functions across 21 modules:
+keeps advancing under load. 24 test functions across 22 modules:
 
 ```sh
 ./run_e2e_tests.sh

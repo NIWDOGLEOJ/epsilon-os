@@ -8,6 +8,7 @@ pub mod elf;
 pub mod fault;
 pub mod pcb;
 pub mod scheduler;
+pub mod uevent;
 pub mod userprogs;
 
 pub use elf::{load_elf, ElfError};

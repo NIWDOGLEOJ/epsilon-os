@@ -194,29 +194,32 @@ impl Scheduler {
         let user_pml4 = create_user_address_space();
         allocated_frames.push(user_pml4);
 
-        // User stack, one page below the top of the lower half. `elf::parse`
-        // rejects any segment that would reach this address.
-        let ustack_virt = VirtAddr::new(0x0000_7FFF_FFFF_0000 - PAGE_SIZE as u64);
-        let ustack_frame = match alloc_zeroed_frame() {
-            Some(f) => f,
-            None => {
-                for frame in allocated_frames {
-                    free_frame(frame);
+        // User stack at the top of the lower half. `elf::parse` rejects any
+        // segment that would reach into it.
+        for page in 0..crate::task::elf::USER_STACK_PAGES {
+            let virt =
+                VirtAddr::new(crate::task::elf::USER_STACK_BOTTOM + (page * PAGE_SIZE) as u64);
+            let frame = match alloc_zeroed_frame() {
+                Some(f) => f,
+                None => {
+                    for frame in allocated_frames {
+                        free_frame(frame);
+                    }
+                    return Err(ElfError::OutOfMemory);
                 }
-                return Err(ElfError::OutOfMemory);
-            }
-        };
-        allocated_frames.push(ustack_frame);
+            };
+            allocated_frames.push(frame);
 
-        map_page(
-            user_pml4,
-            ustack_virt,
-            ustack_frame,
-            PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::USER_ACCESSIBLE
-                | PageTableFlags::NO_EXECUTE,
-        );
+            map_page(
+                user_pml4,
+                virt,
+                frame,
+                PageTableFlags::PRESENT
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::USER_ACCESSIBLE
+                    | PageTableFlags::NO_EXECUTE,
+            );
+        }
 
         let entry = match crate::task::elf::load_elf(image, user_pml4, &mut allocated_frames) {
             Ok(entry) => entry,
@@ -235,7 +238,7 @@ impl Scheduler {
         let kstack_top = kstack.as_ptr() as u64 + KERNEL_STACK_SIZE as u64;
         let kstack_bottom = kstack.as_ptr() as u64;
 
-        let ustack_top_addr = 0x0000_7FFF_FFFF_0000u64;
+        let ustack_top_addr = crate::task::elf::USER_STACK_TOP;
         let context = TaskContext::new_user_task(
             entry.as_u64() as usize,
             ustack_top_addr,

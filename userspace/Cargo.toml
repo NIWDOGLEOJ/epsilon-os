@@ -1,0 +1,16 @@
+[package]
+name = "aegis_user_terminal"
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately dependency-free. This binary runs in Ring 3 with nothing beneath
+# it but the syscall table, so anything it links has to be reachable from `core`
+# plus the runtime in `rt.rs`.
+[dependencies]
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = false
+codegen-units = 1
+debug = true

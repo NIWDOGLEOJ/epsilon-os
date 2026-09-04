@@ -8,6 +8,7 @@ pub mod font;
 pub mod menubar;
 pub mod primitives;
 pub mod spotlight;
+pub mod surface;
 pub mod wallpaper;
 pub mod window;
 pub mod wm;
