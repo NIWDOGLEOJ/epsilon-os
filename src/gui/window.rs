@@ -15,6 +15,14 @@ use crate::gui::primitives::{
 
 pub const TITLEBAR_HEIGHT: u32 = 24;
 
+/// Target region for window edge snapping and tiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapTarget {
+    Maximize,
+    LeftHalf,
+    RightHalf,
+}
+
 // ============================================================================
 // Window Structure & State
 // ============================================================================
@@ -31,6 +39,9 @@ pub struct Window {
     pub is_dragging: bool,
     pub is_minimized: bool,
     pub is_closed: bool,
+    pub is_maximized: bool,
+    pub saved_bounds: Option<Rect>,
+    pub last_titlebar_click_tick: u64,
     pub drag_offset_x: i32,
     pub drag_offset_y: i32,
     pub z_order: usize,
@@ -61,11 +72,67 @@ impl Window {
             is_dragging: false,
             is_minimized: false,
             is_closed: false,
+            is_maximized: false,
+            saved_bounds: None,
+            last_titlebar_click_tick: 0,
             drag_offset_x: 0,
             drag_offset_y: 0,
             z_order: 0,
             pid,
         }
+    }
+
+    /// Toggles window between maximized state and previous floating bounds.
+    pub fn toggle_maximize(&mut self, screen_w: u32, screen_h: u32) {
+        if self.is_maximized {
+            self.restore();
+        } else {
+            self.snap_to(SnapTarget::Maximize, screen_w, screen_h);
+        }
+    }
+
+    /// Snaps window to a target workspace region (Maximize, LeftHalf, RightHalf).
+    pub fn snap_to(&mut self, target: SnapTarget, screen_w: u32, screen_h: u32) {
+        if self.saved_bounds.is_none() {
+            self.saved_bounds = Some(self.bounds());
+        }
+
+        let menubar_h = 24;
+        let dock_clearance = 60;
+        let workspace_h = screen_h.saturating_sub(menubar_h + dock_clearance);
+
+        match target {
+            SnapTarget::Maximize => {
+                self.x = 0;
+                self.y = menubar_h as i32;
+                self.width = screen_w;
+                self.height = workspace_h;
+            }
+            SnapTarget::LeftHalf => {
+                self.x = 0;
+                self.y = menubar_h as i32;
+                self.width = screen_w / 2;
+                self.height = workspace_h;
+            }
+            SnapTarget::RightHalf => {
+                self.x = (screen_w / 2) as i32;
+                self.y = menubar_h as i32;
+                self.width = screen_w / 2;
+                self.height = workspace_h;
+            }
+        }
+        self.is_maximized = true;
+    }
+
+    /// Restores the window to its saved pre-snap bounds.
+    pub fn restore(&mut self) {
+        if let Some(saved) = self.saved_bounds.take() {
+            self.x = saved.x;
+            self.y = saved.y;
+            self.width = saved.width;
+            self.height = saved.height;
+        }
+        self.is_maximized = false;
     }
 
     #[inline]

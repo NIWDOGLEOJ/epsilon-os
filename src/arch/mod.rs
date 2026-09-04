@@ -3,6 +3,9 @@
 pub mod gdt;
 pub mod idt;
 pub mod serial;
+pub mod time;
+
+pub use time::FramePacer;
 
 /// Saves `RFLAGS` and clears `IF`, restoring the original interrupt state on drop.
 ///

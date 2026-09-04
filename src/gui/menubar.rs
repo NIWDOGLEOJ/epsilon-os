@@ -16,6 +16,8 @@ pub enum WallpaperTheme {
     CyberTwilight,
     EmeraldForest,
     MidnightSlate,
+    SunsetHorizon,
+    SolarFlare,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +26,7 @@ pub enum MenubarAction {
     OpenAbout,
     SetWallpaper(WallpaperTheme),
     Reboot,
+    ToggleSpotlight,
 }
 
 /// Renders the top menu bar across the screen width.
@@ -61,13 +64,18 @@ pub fn render_menubar(
     // 5. Contextual Menus ("File", "Edit", "View", "Window", "Help")
     let menus = ["File", "Edit", "View", "Window", "Help"];
     for menu in menus.iter() {
-        if curr_x + 50 > (w as i32 - 320) {
+        if curr_x + 50 > (w as i32 - 350) {
             break; // Avoid colliding with telemetry badges on smaller resolutions
         }
         draw_string(fb, curr_x, 4, menu, Color::TEXT_DIM, None);
         // Codepoints, not bytes: `len()` would over-advance on any non-ASCII label.
         curr_x += (menu.chars().count() as i32 * FONT_WIDTH as i32) + 16;
     }
+
+    // 5b. Spotlight Search Button (at w - 336)
+    let search_x = w as i32 - 336;
+    draw_rounded_rect(fb, Rect::new(search_x, 2, 26, 20), 4, Color::rgb(40, 44, 52));
+    draw_string(fb, search_x + 6, 4, "Q", Color::rgb(100, 230, 245), None);
 
     // 6. Right Telemetry: CPU Utilization Badge
     let cpu_x = w as i32 - 300;
@@ -130,11 +138,15 @@ pub fn render_menubar(
 }
 
 /// Hit-tests a mouse click on the menu bar or open dropdown menu.
-pub fn handle_menubar_click(x: i32, y: i32, menu_open: &mut bool) -> MenubarAction {
+pub fn handle_menubar_click(x: i32, y: i32, screen_width: usize, menu_open: &mut bool) -> MenubarAction {
     if y <= MENUBAR_HEIGHT as i32 {
         if x < 40 {
             *menu_open = !*menu_open;
             return MenubarAction::None;
+        }
+        let search_x = screen_width as i32 - 336;
+        if x >= search_x && x <= search_x + 26 {
+            return MenubarAction::ToggleSpotlight;
         }
     }
 

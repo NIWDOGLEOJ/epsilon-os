@@ -7,3 +7,9 @@ tests/e2e/target/
 
 # Stray compiler output
 a.out
+
+# Python bytecode & cache
+__pycache__/
+*.pyc
+*.pyo
+

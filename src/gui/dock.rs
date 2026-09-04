@@ -5,14 +5,16 @@
 
 use crate::drivers::framebuffer::Framebuffer;
 use crate::gui::font::{
-    draw_about_icon, draw_calc_icon, draw_crash_icon, draw_editor_icon, draw_pulse_icon,
-    draw_snake_icon, draw_string, draw_terminal_icon, measure_string,
+    draw_about_icon, draw_calc_icon, draw_chat_icon, draw_crash_icon, draw_editor_icon,
+    draw_files_icon, draw_globe_icon, draw_mine_icon, draw_music_note_icon, draw_paint_icon,
+    draw_pulse_icon, draw_settings_icon, draw_snake_icon, draw_string, draw_terminal_icon,
+    measure_string,
 };
 use crate::gui::primitives::{
     draw_circle, draw_rounded_rect, draw_rounded_rect_outline, draw_shadow, Color, Rect,
 };
 
-pub const DOCK_WIDTH: u32 = 420;
+pub const DOCK_WIDTH: u32 = 840;
 pub const DOCK_HEIGHT: u32 = 48;
 pub const DOCK_RADIUS: u32 = 12;
 
@@ -21,20 +23,34 @@ pub enum AppId {
     CrashTest,
     ActivityMonitor,
     Terminal,
+    FileManager,
     AegisPad,
+    Browser,
+    Minesweeper,
+    Synth,
+    Chat,
     Calculator,
     Snake,
+    Paint,
+    Settings,
     AboutDialog,
 }
 
 impl AppId {
-    pub const ALL: [AppId; 7] = [
+    pub const ALL: [AppId; 14] = [
         AppId::CrashTest,
         AppId::ActivityMonitor,
         AppId::Terminal,
+        AppId::FileManager,
         AppId::AegisPad,
+        AppId::Browser,
+        AppId::Minesweeper,
+        AppId::Synth,
+        AppId::Chat,
         AppId::Calculator,
         AppId::Snake,
+        AppId::Paint,
+        AppId::Settings,
         AppId::AboutDialog,
     ];
 
@@ -43,9 +59,16 @@ impl AppId {
             AppId::CrashTest => "Crash-Test Demo",
             AppId::ActivityMonitor => "Activity Monitor",
             AppId::Terminal => "Terminal Shell",
+            AppId::FileManager => "Aegis Files",
             AppId::AegisPad => "AegisPad",
+            AppId::Browser => "Aegis Browser",
+            AppId::Minesweeper => "Minesweeper",
+            AppId::Synth => "AegisSynth",
+            AppId::Chat => "AegisChat",
             AppId::Calculator => "Calculator",
             AppId::Snake => "Snake Game",
+            AppId::Paint => "Aegis Paint",
+            AppId::Settings => "System Settings",
             AppId::AboutDialog => "About AegisOS",
         }
     }
@@ -66,6 +89,7 @@ pub fn render_dock(
     mouse_x: i32,
     mouse_y: i32,
     running_apps: &[AppId],
+    minimized_apps: &[AppId],
 ) {
     let dock_rect = get_dock_rect(screen_width, screen_height);
 
@@ -77,8 +101,8 @@ pub fn render_dock(
     draw_rounded_rect(fb, dock_rect, DOCK_RADIUS, Color::DOCK_BG);
     draw_rounded_rect_outline(fb, dock_rect, DOCK_RADIUS, Color::DOCK_BORDER);
 
-    // 3. Render 7 App Icons
-    let slot_width = DOCK_WIDTH / 7;
+    // 3. Render 14 App Icons
+    let slot_width = DOCK_WIDTH / 14;
     let mut hovered_app: Option<AppId> = None;
 
     for (i, &app) in AppId::ALL.iter().enumerate() {
@@ -106,17 +130,29 @@ pub fn render_dock(
             AppId::CrashTest => draw_crash_icon(fb, icon_x, icon_y),
             AppId::ActivityMonitor => draw_pulse_icon(fb, icon_x, icon_y),
             AppId::Terminal => draw_terminal_icon(fb, icon_x, icon_y),
+            AppId::FileManager => draw_files_icon(fb, icon_x, icon_y),
             AppId::AegisPad => draw_editor_icon(fb, icon_x, icon_y),
+            AppId::Browser => draw_globe_icon(fb, icon_x, icon_y),
+            AppId::Minesweeper => draw_mine_icon(fb, icon_x, icon_y),
+            AppId::Synth => draw_music_note_icon(fb, icon_x, icon_y),
+            AppId::Chat => draw_chat_icon(fb, icon_x, icon_y),
             AppId::Calculator => draw_calc_icon(fb, icon_x, icon_y),
             AppId::Snake => draw_snake_icon(fb, icon_x, icon_y),
+            AppId::Paint => draw_paint_icon(fb, icon_x, icon_y),
+            AppId::Settings => draw_settings_icon(fb, icon_x, icon_y),
             AppId::AboutDialog => draw_about_icon(fb, icon_x, icon_y),
         }
 
-        // 4. Draw Running Indicator Dot (3px white dot below active app)
+        // 4. Draw Running Indicator Dot (3px dot below active app)
         if running_apps.contains(&app) {
             let dot_x = slot_x + (slot_width as i32 / 2);
             let dot_y = dock_rect.y + DOCK_HEIGHT as i32 - 6;
-            draw_circle(fb, dot_x, dot_y, 2, Color::WHITE);
+            let dot_color = if minimized_apps.contains(&app) {
+                Color::rgb(255, 189, 46) // Amber dot for minimized app
+            } else {
+                Color::WHITE // White dot for active/running app
+            };
+            draw_circle(fb, dot_x, dot_y, 2, dot_color);
         }
     }
 
@@ -150,9 +186,9 @@ pub fn hit_test_dock(
         return None;
     }
 
-    let slot_width = DOCK_WIDTH / 7;
+    let slot_width = DOCK_WIDTH / 14;
     let rel_x = (mouse_x - dock_rect.x) as u32;
-    let index = (rel_x / slot_width).min(6) as usize;
+    let index = (rel_x / slot_width).min(13) as usize;
 
     Some(AppId::ALL[index])
 }

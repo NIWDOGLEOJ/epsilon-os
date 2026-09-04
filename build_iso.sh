@@ -10,7 +10,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 KERNEL_ELF="$PROJECT_DIR/target/x86_64-unknown-none/debug/aegis_os"
-ISO_OUTPUT="$PROJECT_DIR/aegis_os.iso"
+ISO_OUTPUT="${ISO_OUTPUT:-$PROJECT_DIR/aegis_os.iso}"
 ISO_ROOT="/tmp/aegis_os_iso_root"
 
 LIMINE_DIR="/tmp/limine"
@@ -18,9 +18,19 @@ LIMINE_DEPLOY="$LIMINE_DIR/limine"
 
 echo "=== AegisOS ISO Build Pipeline ==="
 
+CARGO_FEATURES="${CARGO_FEATURES:-${1:-}}"
+FEATURES_FLAG=""
+if [ -n "$CARGO_FEATURES" ]; then
+    if [[ "$CARGO_FEATURES" == --features* ]]; then
+        FEATURES_FLAG="$CARGO_FEATURES"
+    else
+        FEATURES_FLAG="--features $CARGO_FEATURES"
+    fi
+fi
+
 # 1. Build the kernel
-echo "[1/4] Compiling AegisOS kernel..."
-cargo build --manifest-path="$PROJECT_DIR/Cargo.toml" 2>&1
+echo "[1/4] Compiling AegisOS kernel... ${FEATURES_FLAG}"
+cargo build --manifest-path="$PROJECT_DIR/Cargo.toml" $FEATURES_FLAG 2>&1
 
 if [ ! -f "$KERNEL_ELF" ]; then
     echo "[FATAL] Kernel ELF not found at $KERNEL_ELF"

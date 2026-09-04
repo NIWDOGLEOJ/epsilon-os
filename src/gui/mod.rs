@@ -7,6 +7,8 @@ pub mod dock;
 pub mod font;
 pub mod menubar;
 pub mod primitives;
+pub mod spotlight;
+pub mod wallpaper;
 pub mod window;
 pub mod wm;
 
@@ -17,5 +19,6 @@ pub use primitives::{
     draw_circle, draw_circle_outline, draw_gradient_v, draw_line, draw_rect, draw_rect_outline,
     draw_rounded_rect, draw_rounded_rect_outline, draw_shadow, Color, Rect,
 };
-pub use window::{Window, TITLEBAR_HEIGHT};
+pub use wallpaper::{parse_ppm_p6, DesktopBackground, PpmImage};
+pub use window::{SnapTarget, Window, TITLEBAR_HEIGHT};
 pub use wm::{WmAction, WindowManager};

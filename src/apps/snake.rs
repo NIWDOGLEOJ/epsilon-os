@@ -122,6 +122,7 @@ impl SnakeApp {
         // Wall collision
         if new_head.x < 0 || new_head.x >= GRID_SIZE || new_head.y < 0 || new_head.y >= GRID_SIZE {
             self.game_over = true;
+            crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::SnakeDie);
             if self.score > self.high_score {
                 self.high_score = self.score;
             }
@@ -131,6 +132,7 @@ impl SnakeApp {
         // Self collision
         if self.snake.contains(&new_head) {
             self.game_over = true;
+            crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::SnakeDie);
             if self.score > self.high_score {
                 self.high_score = self.score;
             }
@@ -142,6 +144,7 @@ impl SnakeApp {
         // Check food
         if new_head == self.food {
             self.score += 10;
+            crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::SnakeEat);
             self.spawn_food();
         } else {
             self.snake.pop_back();

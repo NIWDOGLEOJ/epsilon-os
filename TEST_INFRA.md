@@ -11,7 +11,22 @@
 
 AegisOS is an x86_64 operating system designed with a core guarantee: **hardware-enforced fault isolation and crash resilience**. Userspace application crashes (such as Page Faults, Divide-by-Zero, Invalid Opcodes, and Out-of-Bounds writes) must terminate only the faulting process without crashing the kernel, freezing the desktop environment, or corrupting memory of other applications.
 
-To rigorously verify this guarantee without reliance on fragile ad-hoc manual testing, AegisOS employs a **4-Tier Opaque-Box E2E Testing Framework**. The framework treats the kernel and applications as opaque systems, testing them via public interface contracts, simulated bare-metal hardware execution, and automated QEMU serial assertion logging.
+### 1.1 Automated Bare-Metal QEMU E2E Suite (`tests/qemu_e2e/`)
+The primary regression and acceptance test suite for AegisOS boots the real bare-metal `aegis_os.iso` in QEMU (with KVM/TCG acceleration) and verifies system operations end-to-end:
+- **Headless QEMU Orchestration**: Managed via `tests/qemu_e2e/harness.py`.
+- **Serial Console Telemetry**: Parses COM1 UART logs for Limine boot milestones, memory allocator footprint (<60MB), and fault isolation tags.
+- **QEMU Monitor Integration**: Drives interactive PS/2 mouse movements, button clicks, and keyboard strokes.
+- **PPM Framebuffer Verification**: Captures `screendump` PPM buffers and validates non-flat color variety, palette diversity, and GUI chrome rendering.
+- **CPU Register & Interrupt Stability**: Queries `info registers` to assert `RFLAGS.IF` remains enabled and `RIP` advances under 560-event input flood conditions.
+
+Run the bare-metal E2E test suite with:
+```sh
+./run_e2e_tests.sh
+```
+
+### 1.2 Historical Host Simulation Mock Suite (`tests/e2e/`)
+Note: `tests/e2e/` contains a historical 4-tier design simulation implemented in standard Rust (`std`) modeling kernel interfaces on the host platform.
+
 
 ```
 +---------------------------------------------------------------------------------------------------+

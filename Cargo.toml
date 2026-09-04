@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["AegisOS Core Team"]
 description = "A crash-resilient x86_64 operating system in Rust with macOS desktop environment"
 
+[features]
+default = []
+selftest = []
+
 [dependencies]
 # Limine Bootloader Protocol bindings
 limine = "0.5.0"

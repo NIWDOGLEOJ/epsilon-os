@@ -6,9 +6,15 @@ extern crate alloc;
 pub mod apps;
 pub mod arch;
 pub mod drivers;
+pub mod fs;
 pub mod gui;
 pub mod memory;
+pub mod net;
 pub mod task;
+pub mod agent;
+
+#[cfg(feature = "selftest")]
+pub mod selftest;
 
 use alloc::format;
 use alloc::string::ToString;
@@ -191,6 +197,17 @@ pub extern "C" fn _start() -> ! {
     });
     serial_println!("[OK] Task Scheduler & Ring 3 Fault Isolation Engine active.");
 
+    // 9b. Initialize In-Memory Virtual Filesystem (RAM Disk VFS)
+    fs::init_vfs();
+
+    // 9c. Initialize Autonomous AI Agent Kernel Bridge (Ring 0 Supervisor Access)
+    agent::init_agent_bridge();
+
+    #[cfg(feature = "selftest")]
+    {
+        selftest::run_kernel_selftests();
+    }
+
     // 10. Spawn Core System Background Tasks (Ring 0 Kernel Workers)
     let pid_mon = task::spawn_process("monitor", activity_monitor_task_entry, false);
     let pid_term = task::spawn_process("terminal", terminal_shell_task_entry, false);
@@ -266,6 +283,61 @@ pub extern "C" fn _start() -> ! {
     serial_println!("      AegisOS macOS Desktop Compositor Active          ");
     serial_println!("=======================================================");
 
+    // Play startup chime
+    crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::BootChime);
+
+    // 12b. Calibrate Hardware TSC for 60 FPS Frame Pacing
+    let mut pacer = arch::FramePacer::init();
+
+    // Helper closure to launch application windows
+    let launch_app_window = |app_id: AppId, wm: &mut WindowManager| {
+        crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowOpen);
+        match app_id {
+            AppId::CrashTest => {
+                wm.create_window(AppId::CrashTest, "Crash-Test Demo App", 480, 390, 520, 300, Some(pid_crash));
+            }
+            AppId::ActivityMonitor => {
+                wm.create_window(AppId::ActivityMonitor, "Activity Monitor", 480, 35, 520, 340, Some(pid_mon));
+            }
+            AppId::Terminal => {
+                wm.create_window(AppId::Terminal, "Terminal — guest@aegis-os:~", 30, 35, 430, 300, Some(pid_term));
+            }
+            AppId::FileManager => {
+                wm.create_window(AppId::FileManager, "Aegis Files — VFS Browser", 180, 120, 520, 360, None);
+            }
+            AppId::AegisPad => {
+                wm.create_window(AppId::AegisPad, "AegisPad — welcome.txt", 30, 350, 430, 280, Some(pid_pad));
+            }
+            AppId::Browser => {
+                wm.create_window(AppId::Browser, "Aegis Browser — aegis://home", 140, 60, 560, 420, None);
+            }
+            AppId::Minesweeper => {
+                wm.create_window(AppId::Minesweeper, "Minesweeper", 440, 160, 248, 310, None);
+            }
+            AppId::Synth => {
+                wm.create_window(AppId::Synth, "AegisSynth — Chiptune Studio", 360, 130, 520, 400, None);
+            }
+            AppId::Chat => {
+                wm.create_window(AppId::Chat, "AegisChat — Intranet Messenger", 280, 100, 540, 390, None);
+            }
+            AppId::Calculator => {
+                wm.create_window(AppId::Calculator, "Scientific Calculator", 380, 150, 450, 360, None);
+            }
+            AppId::Snake => {
+                wm.create_window(AppId::Snake, "Snake Arcade Game", 200, 150, 340, 360, None);
+            }
+            AppId::Paint => {
+                wm.create_window(AppId::Paint, "Aegis Paint — Canvas", 200, 100, 460, 340, None);
+            }
+            AppId::Settings => {
+                wm.create_window(AppId::Settings, "System Settings", 160, 90, 540, 380, None);
+            }
+            AppId::AboutDialog => {
+                wm.create_window(AppId::AboutDialog, "About AegisOS", 340, 200, 340, 300, None);
+            }
+        }
+    };
+
     // 13. Main Desktop Compositor & Event Dispatch Loop
     let mut uptime_ticks: u64 = 0;
     loop {
@@ -289,41 +361,27 @@ pub extern "C" fn _start() -> ! {
             match mouse_ev {
                 MouseEvent::MouseMove { x, y, .. } => {
                     wm.handle_mouse_move(x, y);
+                    if wm.mouse_down {
+                        if let Some(focused) = wm.focused_window() {
+                            if !focused.is_dragging && focused.client_rect().contains(x, y) {
+                                app_suite.handle_mouse_drag(focused, x, y);
+                            }
+                        }
+                    }
                 }
                 MouseEvent::MouseDown { button, x, y } => {
                     if button == MouseButton::Left {
                         let action = wm.handle_mouse_down(x, y);
                         match action {
                             WmAction::AppLaunched(app_id) => {
-                                match app_id {
-                                    AppId::CrashTest => {
-                                        wm.create_window(AppId::CrashTest, "Crash-Test Demo App", 480, 390, 520, 300, Some(pid_crash));
-                                    }
-                                    AppId::ActivityMonitor => {
-                                        wm.create_window(AppId::ActivityMonitor, "Activity Monitor", 480, 35, 520, 340, Some(pid_mon));
-                                    }
-                                    AppId::Terminal => {
-                                        wm.create_window(AppId::Terminal, "Terminal — guest@aegis-os:~", 30, 35, 430, 300, Some(pid_term));
-                                    }
-                                    AppId::AegisPad => {
-                                        wm.create_window(AppId::AegisPad, "AegisPad — welcome.txt", 30, 350, 430, 280, Some(pid_pad));
-                                    }
-                                    AppId::Calculator => {
-                                        wm.create_window(AppId::Calculator, "Calculator", 480, 180, 260, 320, None);
-                                    }
-                                    AppId::Snake => {
-                                        wm.create_window(AppId::Snake, "Snake Arcade Game", 200, 150, 340, 360, None);
-                                    }
-                                    AppId::AboutDialog => {
-                                        wm.create_window(AppId::AboutDialog, "About AegisOS", 340, 200, 340, 300, None);
-                                    }
-                                }
+                                launch_app_window(app_id, &mut wm);
                             }
                             WmAction::RebootRequested => {
                                 serial_println!("[SYS] User requested reboot via menu bar.");
                                 unsafe { outb(0x64, 0xFE); }
                             }
                             WmAction::WindowClosed(_wid, pid_opt) => {
+                                crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowClose);
                                 if let Some(pid) = pid_opt {
                                     serial_println!("[WM] Closed window associated with PID {}.", pid);
                                 }
@@ -331,12 +389,13 @@ pub extern "C" fn _start() -> ! {
                             WmAction::WindowFocused(wid) => {
                                 if let Some(win) = wm.windows.iter().find(|w| w.id == wid) {
                                     if win.client_rect().contains(x, y) {
-                                        let app_act = app_suite.handle_mouse_down(win, x, y);
+                                        let app_act = app_suite.handle_mouse_down(win, x, y, false);
                                         match app_act {
                                             AppAction::CloseWindow => {
                                                 wm.close_window(wid);
                                             }
                                             AppAction::FaultTriggered(fault_idx) => {
+                                                crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::Alert);
                                                 serial_println!(
                                                     "[CRASH-TEST] User clicked fault button #{}. Spawning isolated Ring 3 fault task...",
                                                     fault_idx
@@ -352,6 +411,26 @@ pub extern "C" fn _start() -> ! {
                                                     Color::rgb(255, 189, 46),
                                                 );
                                             }
+                                            AppAction::OpenFileInEditor(path) => {
+                                                app_suite.editor.open_path(&path);
+                                                if let Some(pos) = wm.windows.iter().position(|w| w.app_id == AppId::AegisPad) {
+                                                    let pad_id = wm.windows[pos].id;
+                                                    wm.windows[pos].title = format!("AegisPad — {}", path);
+                                                    wm.focus_window(pad_id);
+                                                } else {
+                                                    wm.create_window(AppId::AegisPad, &format!("AegisPad — {}", path), 30, 350, 430, 280, Some(pid_pad));
+                                                }
+                                            }
+                                            AppAction::SetWallpaper(theme) => {
+                                                wm.set_wallpaper_theme(theme);
+                                            }
+                                            AppAction::SetCustomWallpaper(path) => {
+                                                if let Ok(bytes) = crate::fs::read_file(&path) {
+                                                    if let Ok(ppm) = crate::gui::wallpaper::parse_ppm_p6(&bytes) {
+                                                        wm.set_custom_wallpaper(ppm);
+                                                    }
+                                                }
+                                            }
                                             _ => {}
                                         }
                                     }
@@ -359,43 +438,69 @@ pub extern "C" fn _start() -> ! {
                             }
                             WmAction::None => {}
                         }
+                    } else if button == MouseButton::Right {
+                        if let Some(focused) = wm.focused_window() {
+                            if focused.client_rect().contains(x, y) {
+                                app_suite.handle_mouse_down_right(focused, x, y);
+                            }
+                        }
                     }
                 }
                 MouseEvent::MouseUp { x, y, .. } => {
                     wm.handle_mouse_up(x, y);
+                    app_suite.handle_mouse_up();
                 }
             }
         }
 
         // B. Poll & Dispatch Keyboard Events
         while let Some(key_ev) = poll_key_event() {
+            // Global Spotlight Toggle: Ctrl+Space or F3
+            if key_ev.pressed && ((key_ev.ctrl && key_ev.char_byte == Some(b' ')) || key_ev.code == crate::drivers::ps2_keyboard::KeyCode::F(3)) {
+                wm.spotlight.toggle();
+                crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowOpen);
+                continue;
+            }
+
+            // If Spotlight is visible, it intercepts all keyboard input
+            if wm.spotlight.is_visible {
+                if key_ev.pressed {
+                    match key_ev.code {
+                        crate::drivers::ps2_keyboard::KeyCode::Escape => {
+                            wm.spotlight.hide();
+                        }
+                        crate::drivers::ps2_keyboard::KeyCode::Up => {
+                            wm.spotlight.select_prev();
+                        }
+                        crate::drivers::ps2_keyboard::KeyCode::Down => {
+                            wm.spotlight.select_next();
+                        }
+                        crate::drivers::ps2_keyboard::KeyCode::Enter => {
+                            if let Some(to_launch) = wm.spotlight.activate_selected() {
+                                launch_app_window(to_launch, &mut wm);
+                            }
+                        }
+                        crate::drivers::ps2_keyboard::KeyCode::Backspace => {
+                            wm.spotlight.backspace();
+                        }
+                        _ => {
+                            if let Some(ch) = key_ev.char_byte {
+                                if (32..=126).contains(&ch) {
+                                    wm.spotlight.push_char(ch as char);
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Normal application keyboard dispatch
             if let Some(focused) = wm.focused_window() {
                 let app_id = focused.app_id;
                 let launch_req = app_suite.handle_key(app_id, key_ev);
                 if let Some(to_launch) = launch_req {
-                    match to_launch {
-                        AppId::CrashTest => {
-                            wm.create_window(AppId::CrashTest, "Crash-Test Demo App", 480, 390, 520, 300, Some(pid_crash));
-                        }
-                        AppId::ActivityMonitor => {
-                            wm.create_window(AppId::ActivityMonitor, "Activity Monitor", 480, 35, 520, 340, Some(pid_mon));
-                        }
-                        AppId::Terminal => {
-                            wm.create_window(AppId::Terminal, "Terminal — guest@aegis-os:~", 30, 35, 430, 300, Some(pid_term));
-                        }
-                        AppId::AegisPad => {
-                            wm.create_window(AppId::AegisPad, "AegisPad — welcome.txt", 30, 350, 430, 280, Some(pid_pad));
-                        }
-                        AppId::Calculator => {
-                            wm.create_window(AppId::Calculator, "Calculator", 480, 180, 260, 320, None);
-                        }
-                        AppId::Snake => {
-                            wm.create_window(AppId::Snake, "Snake Arcade Game", 200, 150, 340, 360, None);
-                        }
-                        AppId::AboutDialog => {
-                            wm.create_window(AppId::AboutDialog, "About AegisOS", 340, 200, 340, 300, None);
-                        }
-                    }
+                    launch_app_window(to_launch, &mut wm);
                 }
             }
         }
@@ -426,10 +531,17 @@ pub extern "C" fn _start() -> ! {
             fb.swap_buffers();
         }
 
-        // Smooth frame throttle
-        for _ in 0..1_000 {
-            core::hint::spin_loop();
-        }
+        // Calibrated 60 FPS hardware frame pacing
+        pacer.pace_frame();
+
+        // Step non-blocking audio sequencer
+        crate::drivers::speaker::update_audio();
+
+        // Step chiptune pattern sequencer
+        app_suite.synth.tick_sequencer(task::get_uptime_ticks());
+
+        // Poll intranet loopback network
+        app_suite.chat.poll_network();
     }
 }
 

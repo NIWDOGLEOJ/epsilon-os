@@ -6,14 +6,20 @@ pub mod ring;
 pub mod framebuffer;
 pub mod ps2_keyboard;
 pub mod ps2_mouse;
+pub mod speaker;
 
 pub use framebuffer::{clear_screen, get_dimensions, swap_buffers, with_framebuffer, Framebuffer};
 pub use ps2_keyboard::{init_ps2_keyboard, poll_key_event, KeyCode, KeyEvent};
 pub use ps2_mouse::{get_mouse_position, init_ps2_mouse, poll_mouse_event, MouseButton, MouseEvent};
+pub use speaker::{
+    beep, init_speaker, is_speaker_active, mute, play_notes, play_sound_effect, read_speaker_port,
+    set_frequency, update_audio, Note, SoundEffect,
+};
 
 /// Initializes all hardware drivers given a Limine Framebuffer reference.
 pub fn init_drivers(fb: &limine::framebuffer::Framebuffer) {
     framebuffer::init_from_limine(fb);
     ps2_keyboard::init_ps2_keyboard();
     ps2_mouse::init_ps2_mouse(fb.width() as usize, fb.height() as usize);
+    speaker::init_speaker();
 }

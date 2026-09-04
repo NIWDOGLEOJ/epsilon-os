@@ -12,7 +12,7 @@ use crate::drivers::ps2_mouse::draw_cursor;
 use crate::gui::dock::{hit_test_dock, render_dock, AppId};
 use crate::gui::font::draw_string;
 use crate::gui::menubar::{handle_menubar_click, render_menubar, MenubarAction, WallpaperTheme, MENUBAR_HEIGHT};
-use crate::gui::primitives::{draw_gradient_v, draw_rect_outline, draw_rounded_rect, draw_shadow, Color, Rect};
+use crate::gui::primitives::{draw_rect_outline, draw_rounded_rect, draw_shadow, Color, Rect};
 use crate::gui::window::Window;
 
 // ============================================================================
@@ -54,7 +54,10 @@ pub struct WindowManager {
     pub mouse_down: bool,
     pub menu_open: bool,
     pub wallpaper_theme: WallpaperTheme,
+    pub desktop_background: crate::gui::wallpaper::DesktopBackground,
     pub notifications: Vec<NotificationToast>,
+    pub snap_preview: Option<crate::gui::window::SnapTarget>,
+    pub spotlight: crate::gui::spotlight::Spotlight,
 }
 
 impl WindowManager {
@@ -70,8 +73,22 @@ impl WindowManager {
             mouse_down: false,
             menu_open: false,
             wallpaper_theme: WallpaperTheme::DeepOcean,
+            desktop_background: crate::gui::wallpaper::DesktopBackground::Theme(WallpaperTheme::DeepOcean),
             notifications: Vec::new(),
+            snap_preview: None,
+            spotlight: crate::gui::spotlight::Spotlight::new(),
         }
+    }
+
+    /// Sets the active wallpaper theme.
+    pub fn set_wallpaper_theme(&mut self, theme: WallpaperTheme) {
+        self.wallpaper_theme = theme;
+        self.desktop_background = crate::gui::wallpaper::DesktopBackground::Theme(theme);
+    }
+
+    /// Sets a custom PPM image as the live desktop wallpaper.
+    pub fn set_custom_wallpaper(&mut self, ppm: crate::gui::wallpaper::PpmImage) {
+        self.desktop_background = crate::gui::wallpaper::DesktopBackground::Custom(ppm);
     }
 
     /// Pushes a desktop notification banner to the top-right corner.
@@ -170,15 +187,47 @@ impl WindowManager {
         self.mouse_down = true;
 
         // 1. Check Menu Bar / System Dropdown
-        let menu_act = handle_menubar_click(x, y, &mut self.menu_open);
+        let menu_act = handle_menubar_click(x, y, self.screen_width, &mut self.menu_open);
         match menu_act {
             MenubarAction::OpenAbout => return WmAction::AppLaunched(AppId::AboutDialog),
             MenubarAction::SetWallpaper(theme) => {
-                self.wallpaper_theme = theme;
+                self.set_wallpaper_theme(theme);
                 return WmAction::None;
             }
             MenubarAction::Reboot => return WmAction::RebootRequested,
+            MenubarAction::ToggleSpotlight => {
+                self.spotlight.toggle();
+                crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowOpen);
+                return WmAction::None;
+            }
             MenubarAction::None => {}
+        }
+
+        // 1b. Check Spotlight Modal Click (if visible)
+        if self.spotlight.is_visible {
+            let modal_w = 500u32;
+            let result_height = if self.spotlight.results.is_empty() { 0 } else { (self.spotlight.results.len() as u32 * 28) + 8 };
+            let modal_h = 44 + result_height;
+            let mx = ((self.screen_width as i32) - modal_w as i32) / 2;
+            let my = (self.screen_height as i32) / 4;
+            let modal_rect = Rect::new(mx, my, modal_w, modal_h);
+
+            if !modal_rect.contains(x, y) {
+                self.spotlight.hide();
+            } else {
+                let results_y = my + 40;
+                for i in 0..self.spotlight.results.len() {
+                    let ry = results_y + (i as i32 * 28);
+                    let row_rect = Rect::new(mx + 6, ry, modal_w - 12, 26);
+                    if row_rect.contains(x, y) {
+                        self.spotlight.selected_idx = i;
+                        if let Some(app) = self.spotlight.activate_selected() {
+                            return WmAction::AppLaunched(app);
+                        }
+                    }
+                }
+                return WmAction::None;
+            }
         }
 
         // 2. Check Launcher Dock Click
@@ -208,15 +257,35 @@ impl WindowManager {
                     return WmAction::WindowClosed(wid, pid);
                 } else if win.hit_test_minimize(x, y) {
                     self.windows[i].is_minimized = true;
+                    crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowClose);
                     if let Some(top) = self.windows.iter_mut().rev().find(|w| !w.is_minimized) {
                         top.is_focused = true;
                     }
                     return WmAction::None;
+                } else if win.hit_test_maximize(x, y) {
+                    let wid = self.windows[i].id;
+                    self.windows[i].toggle_maximize(self.screen_width as u32, self.screen_height as u32);
+                    crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowSnap);
+                    self.focus_window(wid);
+                    return WmAction::WindowFocused(wid);
                 } else if win.hit_test_titlebar(x, y) {
-                    self.windows[i].is_dragging = true;
-                    self.windows[i].drag_offset_x = x - self.windows[i].x;
-                    self.windows[i].drag_offset_y = y - self.windows[i].y;
-                    action = WmAction::WindowFocused(self.windows[i].id);
+                    let ticks = crate::task::get_uptime_ticks();
+                    let last_click = self.windows[i].last_titlebar_click_tick;
+                    if ticks.saturating_sub(last_click) < 30 {
+                        // Double-click detected! Toggle maximize!
+                        self.windows[i].last_titlebar_click_tick = 0;
+                        let wid = self.windows[i].id;
+                        self.windows[i].toggle_maximize(self.screen_width as u32, self.screen_height as u32);
+                        crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowSnap);
+                        self.focus_window(wid);
+                        return WmAction::WindowFocused(wid);
+                    } else {
+                        self.windows[i].last_titlebar_click_tick = ticks;
+                        self.windows[i].is_dragging = true;
+                        self.windows[i].drag_offset_x = x - self.windows[i].x;
+                        self.windows[i].drag_offset_y = y - self.windows[i].y;
+                        action = WmAction::WindowFocused(self.windows[i].id);
+                    }
                 } else {
                     action = WmAction::WindowFocused(self.windows[i].id);
                 }
@@ -238,7 +307,20 @@ impl WindowManager {
         self.mouse_x = x;
         self.mouse_y = y;
 
+        let screen_w = self.screen_width as i32;
+        let mut snap_detected = None;
+
         if let Some(win) = self.windows.iter_mut().find(|w| w.is_dragging) {
+            // If window was maximized and dragged downwards, unmaximize it and re-center drag offset
+            if win.is_maximized && (y - MENUBAR_HEIGHT as i32) > 25 {
+                if let Some(saved) = win.saved_bounds {
+                    win.width = saved.width;
+                    win.height = saved.height;
+                    win.is_maximized = false;
+                    win.drag_offset_x = (saved.width / 2) as i32;
+                }
+            }
+
             let new_x = x - win.drag_offset_x;
             let new_y = y - win.drag_offset_y;
 
@@ -247,14 +329,33 @@ impl WindowManager {
                 MENUBAR_HEIGHT as i32,
                 self.screen_height as i32 - 30,
             );
+
+            // Edge snap detection
+            if x <= 5 {
+                snap_detected = Some(crate::gui::window::SnapTarget::LeftHalf);
+            } else if x >= screen_w - 5 {
+                snap_detected = Some(crate::gui::window::SnapTarget::RightHalf);
+            } else if y <= MENUBAR_HEIGHT as i32 + 5 {
+                snap_detected = Some(crate::gui::window::SnapTarget::Maximize);
+            }
         }
+
+        self.snap_preview = snap_detected;
     }
 
     /// Handles mouse button release events.
     pub fn handle_mouse_up(&mut self, _x: i32, _y: i32) {
         self.mouse_down = false;
+        let snap_target = self.snap_preview.take();
+
         for win in self.windows.iter_mut() {
-            win.is_dragging = false;
+            if win.is_dragging {
+                win.is_dragging = false;
+                if let Some(target) = snap_target {
+                    win.snap_to(target, self.screen_width as u32, self.screen_height as u32);
+                    crate::drivers::speaker::play_sound_effect(crate::drivers::speaker::SoundEffect::WindowSnap);
+                }
+            }
         }
     }
 
@@ -273,15 +374,33 @@ impl WindowManager {
         total_ram: u64,
         render_client: &mut dyn FnMut(&Window, &mut Framebuffer),
     ) {
-        // 1. Desktop Wallpaper Gradient based on chosen Theme
-        let bg_rect = Rect::new(0, 0, self.screen_width as u32, self.screen_height as u32);
-        let (top_col, bot_col) = match self.wallpaper_theme {
-            WallpaperTheme::DeepOcean => (Color::rgb(20, 45, 80), Color::rgb(10, 18, 35)),
-            WallpaperTheme::CyberTwilight => (Color::rgb(60, 20, 75), Color::rgb(18, 12, 35)),
-            WallpaperTheme::EmeraldForest => (Color::rgb(18, 55, 40), Color::rgb(10, 25, 18)),
-            WallpaperTheme::MidnightSlate => (Color::rgb(35, 40, 50), Color::rgb(18, 20, 25)),
-        };
-        draw_gradient_v(fb, bg_rect, top_col, bot_col);
+        // 1. Desktop Background (built-in gradient or custom VFS PPM)
+        crate::gui::wallpaper::render_background(
+            fb,
+            &self.desktop_background,
+            self.screen_width,
+            self.screen_height,
+        );
+
+        // 1b. Translucent Snap Preview Ghost
+        if let Some(snap) = self.snap_preview {
+            let menubar_h = MENUBAR_HEIGHT;
+            let dock_clearance = 60;
+            let workspace_h = (self.screen_height as u32).saturating_sub(menubar_h + dock_clearance);
+            let snap_rect = match snap {
+                crate::gui::window::SnapTarget::Maximize => {
+                    Rect::new(0, menubar_h as i32, self.screen_width as u32, workspace_h)
+                }
+                crate::gui::window::SnapTarget::LeftHalf => {
+                    Rect::new(0, menubar_h as i32, (self.screen_width / 2) as u32, workspace_h)
+                }
+                crate::gui::window::SnapTarget::RightHalf => {
+                    Rect::new((self.screen_width / 2) as i32, menubar_h as i32, (self.screen_width / 2) as u32, workspace_h)
+                }
+            };
+            draw_rounded_rect(fb, snap_rect, 8, Color::rgba(60, 140, 240, 45));
+            draw_rect_outline(fb, snap_rect, Color::rgb(70, 160, 255), 2);
+        }
 
         // 2. Render Windows in Z-order (bottom to top): frame then client content,
         //    one window at a time, each client scissored to its own client area.
@@ -315,6 +434,12 @@ impl WindowManager {
             .filter(|w| !w.is_closed)
             .map(|w| w.app_id)
             .collect();
+        let minimized: Vec<AppId> = self
+            .windows
+            .iter()
+            .filter(|w| !w.is_closed && w.is_minimized)
+            .map(|w| w.app_id)
+            .collect();
         render_dock(
             fb,
             self.screen_width,
@@ -322,6 +447,7 @@ impl WindowManager {
             self.mouse_x,
             self.mouse_y,
             &running,
+            &minimized,
         );
 
         // 5. Render Notification Toasts (Top-Right Corner)
@@ -362,7 +488,10 @@ impl WindowManager {
             self.notifications.remove(idx);
         }
 
-        // 6. Render Mouse Cursor Overlay
+        // 6. Render Spotlight Overlay (if visible)
+        self.spotlight.render(fb, self.screen_width, self.screen_height);
+
+        // 7. Render Mouse Cursor Overlay
         draw_cursor(fb, self.mouse_x, self.mouse_y);
     }
 }
