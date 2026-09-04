@@ -252,17 +252,28 @@ impl AppSuite {
 /// background around it and a smaller one shows the top-left corner. The kernel
 /// only ever reads here: user code cannot make the compositor write anywhere.
 fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
-    use crate::gui::surface::{SURFACE, SURFACE_HEIGHT, SURFACE_WIDTH};
+    use crate::gui::surface::{
+        pixel_from, snapshot_frames, SURFACE_FRAME_COUNT, SURFACE_HEIGHT, SURFACE_WIDTH,
+    };
+    use crate::memory::PhysAddr;
 
     let rect = win.client_rect();
-    let surface = SURFACE.lock();
+
+    // Snapshot the frame list, then blit without holding the lock -- see
+    // `surface::snapshot_frames` for why holding it here would deadlock.
+    let mut frames = [PhysAddr::new(0); SURFACE_FRAME_COUNT];
+    let count = snapshot_frames(&mut frames);
+    if count == 0 {
+        return;
+    }
+    let frames = &frames[..count];
 
     let width = core::cmp::min(rect.width as usize, SURFACE_WIDTH);
     let height = core::cmp::min(rect.height as usize, SURFACE_HEIGHT);
 
     for y in 0..height {
         for x in 0..width {
-            let argb = surface.pixel(x, y);
+            let argb = pixel_from(frames, x, y);
             fb.draw_pixel(
                 rect.x + x as i32,
                 rect.y + y as i32,

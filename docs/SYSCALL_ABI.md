@@ -46,7 +46,7 @@ Return values `>= 0` are results. Negative values are errors:
 | 4 | `uptime` | `uptime() -> ticks` | 100 Hz timer ticks since boot. |
 | 5 | `surface_map` | `surface_map() -> base` | Maps this process's window surface. See below. |
 | 6 | `surface_dims` | `surface_dims() -> (w<<32)\|h` | Surface dimensions. |
-| 7 | `poll_event` | `poll_event() -> packed` | Next input event, or 0. |
+| 7 | `poll_event` | `poll_event() -> packed` | Next key or mouse event, or 0. |
 | 8 | `proc_count` | `proc_count() -> n` | |
 | 9 | `proc_info` | `proc_info(i, buf, len) -> n` | Writes `"<pid> <state> <cpu%> <name>"`. |
 | 10 | `mem_stats` | `mem_stats() -> (used_kib<<32)\|total_kib` | |
@@ -132,14 +132,34 @@ supporting several means keying the statics in `src/gui/surface.rs` by PID.
 
 ## Input: event polling
 
-Keystrokes for a focused Ring 3 window are packed into a `u64` and queued in
-`src/task/uevent.rs`, collected with `SYS_POLL_EVENT`:
+Input for a focused Ring 3 window is packed into a `u64` and queued in
+`src/task/uevent.rs`, collected with `SYS_POLL_EVENT`. Two event types share the
+encoding, tagged in the top byte:
 
 ```text
- bits 63..56  event type (1 = key)
- bits 55..40  key code (ASCII byte, or 0x100.. for Enter, Backspace, arrows)
- bits   2..0  alt, ctrl, shift
+ key   (type 1):  bits 55..40  key code (ASCII, or 0x100.. for Enter, arrows, ...)
+                  bits   2..0  alt, ctrl, shift
+
+ mouse (type 2):  bits 55..40  x within the client area
+                  bits 39..24  y within the client area
+                  bits 23..16  button (0 left, 1 right, 2 middle)
+                  bits  15..8  action (0 move, 1 down, 2 up)
 ```
+
+Mouse coordinates are **client-relative**. The compositor does the translation,
+because only it knows where the window is, and a process therefore never learns
+where it sits on screen or receives a coordinate outside its own surface —
+events outside are dropped rather than clamped.
+
+A window's client area belongs entirely to its process: the window manager takes
+the titlebar and the traffic lights before dispatch, and everything inside goes
+to Ring 3. Motion is delivered whenever the pointer is over the client area,
+dragging or not, so a process can implement hover.
+
+Trailing motion events coalesce: the PS/2 stream produces far more moves than a
+process redrawing at frame rate can consume, and a queue full of stale positions
+would push out the button events behind them. Replacing a trailing move keeps
+the newest position without displacing anything else.
 
 The queue is a fixed-capacity ring, not a `VecDeque`, for the reason
 `PROJECT.md` gives: it is written from the compositor loop and read from syscall
@@ -175,7 +195,8 @@ two-phase zombie reaper when the process dies.
   `fs_write` yet — the Ring 3 terminal can read the VFS but not modify it.
 - No signals, no threads, no IPC.
 - No `vDSO`, no TLS, no `arch_prctl`, so `fs`/`gs` bases are unset.
-- No mouse events; `poll_event` only ever returns keys.
+- Mouse wheel and double-click are not delivered; the driver has no notion of
+  either.
 - No guard page below the stack. An overflow faults, which is how the Ring 3
   terminal's first bug was found, but it faults into whatever is mapped below
   rather than reliably into a hole.

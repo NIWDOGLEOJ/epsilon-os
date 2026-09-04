@@ -48,6 +48,17 @@ overflow faults into whatever is mapped below rather than reliably into a hole.
 **One surface.** The kernel maps a single 640x384 window surface, for a single
 Ring 3 GUI process.
 
+## Toolbar
+
+A row of clickable buttons across the top of the surface — `help`, `ps`, `free`,
+`ls`, `clear` and `crash` — with hover highlighting. Clicking one feeds the same
+dispatcher the keyboard uses, so a click is indistinguishable from typing the
+command.
+
+It exists partly as a demonstration: hover proves motion events arrive, and
+clicking `crash` proves a pointer event can reach Ring 3, be resolved to a
+control by user code, and kill the process without disturbing the desktop.
+
 ## Commands
 
 `help`, `echo`, `clear`, `ps`, `free`, `kill`, `ls`, `cat`, `uptime`, `pid`,

@@ -91,6 +91,15 @@ pub const SYS_BEEP: u64 = 15;
 /// Event tags and special key codes, mirroring `src/task/uevent.rs`.
 pub const EVENT_NONE: u64 = 0;
 pub const EVENT_KEY: u64 = 1;
+pub const EVENT_MOUSE: u64 = 2;
+
+pub const MOUSE_MOVE: u8 = 0;
+pub const MOUSE_DOWN: u8 = 1;
+pub const MOUSE_UP: u8 = 2;
+
+pub const BUTTON_LEFT: u8 = 0;
+pub const BUTTON_RIGHT: u8 = 1;
+pub const BUTTON_MIDDLE: u8 = 2;
 
 pub const UKEY_ENTER: u16 = 0x100;
 pub const UKEY_BACKSPACE: u16 = 0x101;
@@ -133,17 +142,37 @@ pub struct KeyPress {
     pub ctrl: bool,
 }
 
+/// A pointer event. Coordinates are relative to this window's client area, so
+/// the process never learns where its window sits on screen.
+pub struct MouseMove {
+    pub x: u16,
+    pub y: u16,
+    pub button: u8,
+    pub action: u8,
+}
+
+pub enum Event {
+    Key(KeyPress),
+    Mouse(MouseMove),
+}
+
 /// Collects the next input event, or `None` if the queue is empty.
-pub fn poll_key() -> Option<KeyPress> {
+pub fn poll_event() -> Option<Event> {
     let packed = unsafe { syscall0(SYS_POLL_EVENT) };
-    if packed >> 56 != EVENT_KEY {
-        return None;
+    match packed >> 56 {
+        EVENT_KEY => Some(Event::Key(KeyPress {
+            code: ((packed >> 40) & 0xFFFF) as u16,
+            shift: packed & (1 << 0) != 0,
+            ctrl: packed & (1 << 1) != 0,
+        })),
+        EVENT_MOUSE => Some(Event::Mouse(MouseMove {
+            x: ((packed >> 40) & 0xFFFF) as u16,
+            y: ((packed >> 24) & 0xFFFF) as u16,
+            button: ((packed >> 16) & 0xFF) as u8,
+            action: ((packed >> 8) & 0xFF) as u8,
+        })),
+        _ => None,
     }
-    Some(KeyPress {
-        code: ((packed >> 40) & 0xFFFF) as u16,
-        shift: packed & (1 << 0) != 0,
-        ctrl: packed & (1 << 1) != 0,
-    })
 }
 
 /// Maps this process's window surface. Returns `(base, width, height)`.

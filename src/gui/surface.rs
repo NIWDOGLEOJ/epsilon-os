@@ -48,19 +48,6 @@ impl Surface {
         Self { frames: Vec::new(), owner: None }
     }
 
-    /// Reads one pixel through the kernel's direct map. Returns 0 for an
-    /// out-of-range coordinate or an unallocated surface.
-    pub fn pixel(&self, x: usize, y: usize) -> u32 {
-        if x >= SURFACE_WIDTH || y >= SURFACE_HEIGHT || self.frames.is_empty() {
-            return 0;
-        }
-        let byte_offset = (y * SURFACE_WIDTH + x) * 4;
-        let frame_index = byte_offset / PAGE_SIZE;
-        let in_frame = byte_offset % PAGE_SIZE;
-        let base = phys_to_virt(self.frames[frame_index]).as_ptr::<u8>();
-        unsafe { core::ptr::read_volatile(base.add(in_frame) as *const u32) }
-    }
-
     pub fn is_mapped(&self) -> bool {
         !self.frames.is_empty() && self.owner.is_some()
     }
@@ -68,6 +55,49 @@ impl Surface {
     pub fn owner(&self) -> Option<u64> {
         self.owner
     }
+}
+
+/// Number of frames a full surface occupies.
+pub const SURFACE_FRAME_COUNT: usize = SURFACE_BYTES.div_ceil(PAGE_SIZE);
+
+/// Copies the surface's frame list into `out`, returning how many were written.
+///
+/// This exists so the compositor never holds `SURFACE` across a blit.
+///
+/// Holding it would be a lock-ordering bug of exactly the kind `PROJECT.md`
+/// describes: the compositor runs in task context with interrupts enabled,
+/// while `map_for_process` takes the same lock from syscall context where
+/// `IA32_FMASK` has already cleared `IF`. Preempt the compositor mid-blit,
+/// schedule the Ring 3 process, and its next `SYS_SURFACE_MAP` spins on a lock
+/// whose holder can never be rescheduled to release it.
+///
+/// Copying the list under a brief guarded lock and reading the pixels without
+/// one keeps the critical section to a few hundred bytes. Reading frames the
+/// process is concurrently writing can tear, which is what a shared framebuffer
+/// is; it cannot fault, because the frames stay allocated for the life of the
+/// system.
+pub fn snapshot_frames(out: &mut [PhysAddr; SURFACE_FRAME_COUNT]) -> usize {
+    let _guard = InterruptGuard::acquire();
+    let surface = SURFACE.lock();
+    let count = surface.frames.len().min(out.len());
+    out[..count].copy_from_slice(&surface.frames[..count]);
+    count
+}
+
+/// Reads one pixel from a snapshot taken by [`snapshot_frames`].
+#[inline]
+pub fn pixel_from(frames: &[PhysAddr], x: usize, y: usize) -> u32 {
+    if x >= SURFACE_WIDTH || y >= SURFACE_HEIGHT {
+        return 0;
+    }
+    let byte_offset = (y * SURFACE_WIDTH + x) * 4;
+    let frame_index = byte_offset / PAGE_SIZE;
+    if frame_index >= frames.len() {
+        return 0;
+    }
+    let in_frame = byte_offset % PAGE_SIZE;
+    let base = phys_to_virt(frames[frame_index]).as_ptr::<u8>();
+    unsafe { core::ptr::read_volatile(base.add(in_frame) as *const u32) }
 }
 
 pub static SURFACE: Mutex<Surface> = Mutex::new(Surface::new());

@@ -414,11 +414,22 @@ pub extern "C" fn _start() -> ! {
             match mouse_ev {
                 MouseEvent::MouseMove { x, y, .. } => {
                     wm.handle_mouse_move(x, y);
-                    if wm.mouse_down {
-                        if let Some(focused) = wm.focused_window() {
-                            if !focused.is_dragging && focused.client_rect().contains(x, y) {
-                                app_suite.handle_mouse_drag(focused, x, y);
+                    if let Some(focused) = wm.focused_window() {
+                        let rect = focused.client_rect();
+                        if focused.app_id == AppId::UserTerminal {
+                            // Deliver motion to the Ring 3 process whenever the
+                            // pointer is over its client area, dragging or not:
+                            // a user program needs hover, not just clicks.
+                            if !focused.is_dragging && rect.contains(x, y) {
+                                task::uevent::post_mouse(
+                                    x - rect.x,
+                                    y - rect.y,
+                                    task::uevent::BUTTON_LEFT,
+                                    task::uevent::MOUSE_MOVE,
+                                );
                             }
+                        } else if wm.mouse_down && !focused.is_dragging && rect.contains(x, y) {
+                            app_suite.handle_mouse_drag(focused, x, y);
                         }
                     }
                 }
@@ -441,7 +452,21 @@ pub extern "C" fn _start() -> ! {
                             }
                             WmAction::WindowFocused(wid) => {
                                 if let Some(win) = wm.windows.iter().find(|w| w.id == wid) {
-                                    if win.client_rect().contains(x, y) {
+                                    let rect = win.client_rect();
+                                    if win.app_id == AppId::UserTerminal {
+                                        // The process owns everything inside its
+                                        // client rect. The window manager has
+                                        // already taken the titlebar and the
+                                        // traffic lights before we get here.
+                                        if rect.contains(x, y) {
+                                            task::uevent::post_mouse(
+                                                x - rect.x,
+                                                y - rect.y,
+                                                task::uevent::BUTTON_LEFT,
+                                                task::uevent::MOUSE_DOWN,
+                                            );
+                                        }
+                                    } else if rect.contains(x, y) {
                                         let app_act = app_suite.handle_mouse_down(win, x, y, false);
                                         match app_act {
                                             AppAction::CloseWindow => {
@@ -493,13 +518,37 @@ pub extern "C" fn _start() -> ! {
                         }
                     } else if button == MouseButton::Right {
                         if let Some(focused) = wm.focused_window() {
-                            if focused.client_rect().contains(x, y) {
-                                app_suite.handle_mouse_down_right(focused, x, y);
+                            let rect = focused.client_rect();
+                            if rect.contains(x, y) {
+                                if focused.app_id == AppId::UserTerminal {
+                                    task::uevent::post_mouse(
+                                        x - rect.x,
+                                        y - rect.y,
+                                        task::uevent::BUTTON_RIGHT,
+                                        task::uevent::MOUSE_DOWN,
+                                    );
+                                } else {
+                                    app_suite.handle_mouse_down_right(focused, x, y);
+                                }
                             }
                         }
                     }
                 }
                 MouseEvent::MouseUp { x, y, .. } => {
+                    // Release goes to the Ring 3 process before the window
+                    // manager clears drag state, so it can pair the up with its
+                    // own down even if the pointer left the client area.
+                    if let Some(focused) = wm.focused_window() {
+                        if focused.app_id == AppId::UserTerminal {
+                            let rect = focused.client_rect();
+                            task::uevent::post_mouse(
+                                x - rect.x,
+                                y - rect.y,
+                                task::uevent::BUTTON_LEFT,
+                                task::uevent::MOUSE_UP,
+                            );
+                        }
+                    }
                     wm.handle_mouse_up(x, y);
                     app_suite.handle_mouse_up();
                 }

@@ -82,9 +82,9 @@ them still reaches the kernel panic handler.
 The terminal was the cheap one — it is mostly text. Porting the rest needs ABI
 that does not exist yet:
 
-- **Mouse events.** `poll_event` delivers keys only, so anything with buttons
-  (Crash-Test, Settings, Paint, Minesweeper, the Calculator keypad) cannot be
-  driven from Ring 3 at all.
+- ~~**Mouse events.**~~ Done. `poll_event` now delivers motion and button
+  events with client-relative coordinates, and the Ring 3 terminal uses them for
+  a hover-highlighting clickable toolbar. No wheel or double-click yet.
 - **Writable VFS.** `fs_read` exists; there is no `fs_write`, `fs_create` or
   `fs_remove`, so AegisPad and Paint cannot save.
 - **More than one surface.** One surface exists, for one process. Two Ring 3

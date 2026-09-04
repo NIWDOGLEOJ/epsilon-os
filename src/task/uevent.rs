@@ -20,6 +20,17 @@ const QUEUE_CAPACITY: usize = 64;
 /// Event type tags, mirrored in `userspace/src/sys.rs`.
 pub const EVENT_NONE: u64 = 0;
 pub const EVENT_KEY: u64 = 1;
+pub const EVENT_MOUSE: u64 = 2;
+
+/// Mouse actions carried in an `EVENT_MOUSE`.
+pub const MOUSE_MOVE: u8 = 0;
+pub const MOUSE_DOWN: u8 = 1;
+pub const MOUSE_UP: u8 = 2;
+
+/// Mouse buttons.
+pub const BUTTON_LEFT: u8 = 0;
+pub const BUTTON_RIGHT: u8 = 1;
+pub const BUTTON_MIDDLE: u8 = 2;
 
 /// Special key codes as delivered to userspace. Printable keys arrive as their
 /// ASCII byte; these occupy a range ASCII does not use.
@@ -43,6 +54,25 @@ pub const UKEY_ESCAPE: u16 = 0x107;
 ///  bit       1  ctrl
 ///  bit       0  shift
 /// ```
+/// Packs a mouse event. Coordinates are client-relative, so a process never
+/// learns where its window sits on screen and cannot use the pointer to probe
+/// the rest of the desktop.
+///
+/// ```text
+///  bits 63..56  event type (2 = mouse)
+///  bits 55..40  x within the client area
+///  bits 39..24  y within the client area
+///  bits 23..16  button (0 left, 1 right, 2 middle)
+///  bits  15..8  action (0 move, 1 down, 2 up)
+/// ```
+fn pack_mouse(x: u16, y: u16, button: u8, action: u8) -> u64 {
+    (EVENT_MOUSE << 56)
+        | ((x as u64) << 40)
+        | ((y as u64) << 24)
+        | ((button as u64) << 16)
+        | ((action as u64) << 8)
+}
+
 fn pack_key(event: &KeyEvent) -> u64 {
     let code: u16 = match event.code {
         KeyCode::Printable(byte) => byte as u16,
@@ -145,6 +175,44 @@ pub fn post_key(event: &KeyEvent) {
     if queue.target.is_some() {
         queue.push(packed);
     }
+}
+
+/// Queues a mouse event for the current target.
+///
+/// `x` and `y` must already be client-relative; the caller does the translation
+/// because only the compositor knows where the window is. Coordinates outside
+/// the surface are dropped rather than clamped, so a process never sees a click
+/// it could not have received.
+pub fn post_mouse(x: i32, y: i32, button: u8, action: u8) {
+    use crate::gui::surface::{SURFACE_HEIGHT, SURFACE_WIDTH};
+
+    if x < 0 || y < 0 || x as usize >= SURFACE_WIDTH || y as usize >= SURFACE_HEIGHT {
+        return;
+    }
+
+    let packed = pack_mouse(x as u16, y as u16, button, action);
+
+    let _guard = InterruptGuard::acquire();
+    let mut queue = QUEUE.lock();
+    if queue.target.is_none() {
+        return;
+    }
+
+    // Motion coalescing. The PS/2 stream produces far more moves than a process
+    // redrawing at frame rate can consume, and a full queue of stale positions
+    // would push out the button events that follow them. Replacing a trailing
+    // move keeps the newest position without displacing anything else.
+    if action == MOUSE_MOVE && queue.len > 0 {
+        let tail = (queue.head + queue.len - 1) % QUEUE_CAPACITY;
+        let previous = queue.slots[tail];
+        let is_move = (previous >> 56) == EVENT_MOUSE && ((previous >> 8) & 0xFF) as u8 == MOUSE_MOVE;
+        if is_move {
+            queue.slots[tail] = packed;
+            return;
+        }
+    }
+
+    queue.push(packed);
 }
 
 /// Collects the next event for `pid`, or `EVENT_NONE`.

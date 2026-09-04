@@ -28,9 +28,65 @@ const COLOR_ERROR: u32 = 0xFFFF_5F56;
 const COLOR_HEADING: u32 = 0xFF5A_C8FA;
 const COLOR_CURSOR: u32 = 0xFFD0_D8E0;
 
+const COLOR_BUTTON: u32 = 0xFF2A_313A;
+const COLOR_BUTTON_HOVER: u32 = 0xFF3D_4753;
+const COLOR_BUTTON_DANGER: u32 = 0xFF5A_2A2A;
+const COLOR_BUTTON_EDGE: u32 = 0xFF4A_545F;
+
 const MAX_COLS: usize = 96;
 const MAX_ROWS: usize = 32;
 const INPUT_CAPACITY: usize = 128;
+
+/// Height of the clickable toolbar strip along the top of the surface.
+const TOOLBAR_H: usize = 30;
+
+/// A toolbar button. `command` is fed to the same dispatcher the keyboard uses,
+/// so clicking one is indistinguishable from typing it.
+struct Button {
+    label: &'static str,
+    command: &'static str,
+    danger: bool,
+}
+
+const BUTTONS: &[Button] = &[
+    Button { label: "help", command: "help", danger: false },
+    Button { label: "ps", command: "ps", danger: false },
+    Button { label: "free", command: "free", danger: false },
+    Button { label: "ls", command: "ls", danger: false },
+    Button { label: "clear", command: "clear", danger: false },
+    Button { label: "crash", command: "crash", danger: true },
+];
+
+/// Left edge and width of button `index`, laid out left to right.
+/// Minimum button width. Wide enough that a short label still gets a target a
+/// pointer can comfortably hit, rather than a 16-pixel sliver.
+const BUTTON_MIN_W: usize = 64;
+
+fn button_bounds(index: usize) -> (usize, usize) {
+    let mut x = 6;
+    for (i, button) in BUTTONS.iter().enumerate() {
+        let width = ((button.label.len() + 4) * FONT_WIDTH).max(BUTTON_MIN_W);
+        if i == index {
+            return (x, width);
+        }
+        x += width + 8;
+    }
+    (x, 0)
+}
+
+/// Which button contains `(x, y)`, if any.
+fn button_at(x: usize, y: usize) -> Option<usize> {
+    if y >= TOOLBAR_H {
+        return None;
+    }
+    for index in 0..BUTTONS.len() {
+        let (bx, bw) = button_bounds(index);
+        if x >= bx && x < bx + bw {
+            return Some(index);
+        }
+    }
+    None
+}
 
 /// One rendered line: fixed-width bytes plus a colour.
 #[derive(Clone, Copy)]
@@ -53,6 +109,9 @@ struct Terminal {
     input_len: usize,
     cols: usize,
     rows: usize,
+    /// Button under the pointer, for hover feedback. Proof that motion events
+    /// arrive, not just clicks.
+    hover: Option<usize>,
 }
 
 impl Terminal {
@@ -65,6 +124,7 @@ impl Terminal {
             cols: cols.min(MAX_COLS),
             // One row is reserved for the input line.
             rows: rows.min(MAX_ROWS),
+            hover: None,
         }
     }
 
@@ -100,20 +160,53 @@ impl Terminal {
 
     fn render(&self, fb: &mut Surface) {
         fb.fill(COLOR_BG);
+        self.render_toolbar(fb);
 
         for (row, line) in self.lines[..self.line_count].iter().enumerate() {
-            fb.draw_text(0, row * FONT_HEIGHT, &line.text[..line.len], line.color, None);
+            fb.draw_text(
+                0,
+                TOOLBAR_H + row * FONT_HEIGHT,
+                &line.text[..line.len],
+                line.color,
+                None,
+            );
         }
 
         // Input line, pinned to the bottom row.
         let input_row = self.rows.saturating_sub(1);
-        let y = input_row * FONT_HEIGHT;
+        let y = TOOLBAR_H + input_row * FONT_HEIGHT;
         fb.draw_text(0, y, b"$ ", COLOR_PROMPT, None);
         let shown = self.input_len.min(self.cols.saturating_sub(3));
         fb.draw_text(2 * FONT_WIDTH, y, &self.input[..shown], COLOR_FG, None);
 
         // Block cursor.
         fb.fill_rect((2 + shown) * FONT_WIDTH, y, FONT_WIDTH, FONT_HEIGHT, COLOR_CURSOR);
+    }
+
+    fn render_toolbar(&self, fb: &mut Surface) {
+        for (index, button) in BUTTONS.iter().enumerate() {
+            let (x, width) = button_bounds(index);
+            if x + width > fb.width {
+                break;
+            }
+
+            let base = if button.danger { COLOR_BUTTON_DANGER } else { COLOR_BUTTON };
+            let fill = if self.hover == Some(index) { COLOR_BUTTON_HOVER } else { base };
+
+            let top = 3;
+            let height = TOOLBAR_H - 6;
+            fb.fill_rect(x, top, width, height, fill);
+            // A one-pixel edge, so the buttons read as buttons.
+            fb.fill_rect(x, top, width, 1, COLOR_BUTTON_EDGE);
+            fb.fill_rect(x, top + height - 1, width, 1, COLOR_BUTTON_EDGE);
+
+            let label_color = if button.danger { COLOR_ERROR } else { COLOR_FG };
+            // Centre the label in the button.
+            let label_w = button.label.len() * FONT_WIDTH;
+            let label_x = x + (width - label_w) / 2;
+            let label_y = top + (height - FONT_HEIGHT) / 2;
+            fb.draw_text(label_x, label_y, button.label.as_bytes(), label_color, None);
+        }
     }
 }
 
@@ -344,6 +437,18 @@ impl Terminal {
     }
 }
 
+/// Echoes a command line and runs it.
+///
+/// Both the keyboard and the toolbar go through here, so a clicked button is
+/// indistinguishable from the same text typed.
+fn submit(term: &mut Terminal, line: &[u8]) {
+    let mut echo = [0u8; MAX_COLS];
+    let mut pos = push_str(&mut echo, 0, b"$ ");
+    pos = push_str(&mut echo, pos, line);
+    term.print(&echo[..pos], COLOR_PROMPT);
+    run_command(term, line);
+}
+
 // -----------------------------------------------------------------------------
 
 #[no_mangle]
@@ -358,46 +463,88 @@ pub extern "C" fn main() -> ! {
         }
     };
 
-    let mut term = Terminal::new(fb.cols(), fb.rows());
+    // The toolbar eats the top of the surface, so the text area has fewer rows
+    // than the surface height alone would suggest.
+    let text_rows = (fb.height - TOOLBAR_H) / FONT_HEIGHT;
+    let mut term = Terminal::new(fb.cols(), text_rows);
     term.print_str("AegisOS Terminal - Ring 3", COLOR_HEADING);
-    term.print_str("This shell is a user process. Type 'help'.", COLOR_FG);
+    term.print_str("This shell is a user process. Type 'help' or click above.", COLOR_FG);
     term.print_str("'crash' and 'panic' kill it without taking down the OS.", COLOR_FG);
 
+    // Paint once before waiting for input. Rendering only on events left the
+    // window blank until the first keystroke, with the startup banner sitting
+    // in the line buffer unseen.
+    term.render(&mut fb);
+
     sys::write_str("[USERTERM] surface mapped, entering event loop.\n");
+
+    let mut announced_move = false;
 
     loop {
         let mut dirty = false;
 
-        while let Some(key) = sys::poll_key() {
-            dirty = true;
-            match key.code {
-                sys::UKEY_ENTER => {
-                    let len = term.input_len;
-                    let mut line = [0u8; INPUT_CAPACITY];
-                    line[..len].copy_from_slice(&term.input[..len]);
-
-                    let mut echo = [0u8; MAX_COLS];
-                    let mut pos = push_str(&mut echo, 0, b"$ ");
-                    pos = push_str(&mut echo, pos, &line[..len]);
-                    term.print(&echo[..pos], COLOR_PROMPT);
-
-                    term.input_len = 0;
-                    run_command(&mut term, &line[..len]);
-                }
-                sys::UKEY_BACKSPACE => {
-                    term.input_len = term.input_len.saturating_sub(1);
-                }
-                sys::UKEY_ESCAPE => {
-                    term.input_len = 0;
-                }
-                code if code < 0x100 => {
-                    let byte = code as u8;
-                    if (32..=126).contains(&byte) && term.input_len < INPUT_CAPACITY {
-                        term.input[term.input_len] = byte;
-                        term.input_len += 1;
+        while let Some(event) = sys::poll_event() {
+            match event {
+                sys::Event::Key(key) => {
+                    dirty = true;
+                    match key.code {
+                        sys::UKEY_ENTER => {
+                            let len = term.input_len;
+                            let mut line = [0u8; INPUT_CAPACITY];
+                            line[..len].copy_from_slice(&term.input[..len]);
+                            term.input_len = 0;
+                            submit(&mut term, &line[..len]);
+                        }
+                        sys::UKEY_BACKSPACE => {
+                            term.input_len = term.input_len.saturating_sub(1);
+                        }
+                        sys::UKEY_ESCAPE => {
+                            term.input_len = 0;
+                        }
+                        code if code < 0x100 => {
+                            let byte = code as u8;
+                            if (32..=126).contains(&byte) && term.input_len < INPUT_CAPACITY {
+                                term.input[term.input_len] = byte;
+                                term.input_len += 1;
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                _ => {}
+
+                sys::Event::Mouse(mouse) => {
+                    let x = mouse.x as usize;
+                    let y = mouse.y as usize;
+
+                    // Announce the first pointer event of each kind. Cheap, and
+                    // it turns "did input reach Ring 3?" into something readable
+                    // on the serial console instead of a guess from pixels.
+                    if !announced_move {
+                        announced_move = true;
+                        sys::write_str("[USERTERM] first mouse event received.\n");
+                    }
+
+                    match mouse.action {
+                        sys::MOUSE_MOVE => {
+                            let hover = button_at(x, y);
+                            if hover != term.hover {
+                                term.hover = hover;
+                                dirty = true;
+                            }
+                        }
+                        sys::MOUSE_DOWN if mouse.button == sys::BUTTON_LEFT => {
+                            if let Some(index) = button_at(x, y) {
+                                dirty = true;
+                                let command = BUTTONS[index].command;
+                                sys::write_str("[USERTERM] toolbar click: ");
+                                sys::write_str(command);
+                                sys::write_str("\n");
+                                submit(&mut term, command.as_bytes());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
 
