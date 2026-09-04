@@ -284,7 +284,8 @@ pub static VFS: Mutex<RamFs> = Mutex::new(RamFs::new());
 /// Initializes the global VFS with seed directories and documents.
 pub fn init_vfs() {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().init_seed_files();
+    let mut vfs = VFS.lock();
+    vfs.init_seed_files();
     crate::serial_println!("[OK] In-Memory Virtual Filesystem (RAM Disk VFS) initialized.");
 }
 
@@ -298,53 +299,62 @@ pub fn read_to_string(path: &str) -> Result<String, &'static str> {
 /// Reads raw binary bytes from a file.
 pub fn read_file(path: &str) -> Result<Vec<u8>, &'static str> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().read(path)
+    let vfs = VFS.lock();
+    vfs.read(path)
 }
 
 /// Writes bytes to a file.
 pub fn write_file(path: &str, data: &[u8]) -> Result<(), &'static str> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().write(path, data)
+    let mut vfs = VFS.lock();
+    vfs.write(path, data)
 }
 
 /// Removes a file.
 pub fn remove_file(path: &str) -> Result<(), &'static str> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().remove(path)
+    let mut vfs = VFS.lock();
+    vfs.remove(path)
 }
 
 /// Creates a new directory.
 pub fn create_dir(path: &str) -> Result<(), &'static str> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().mkdir(path)
+    let mut vfs = VFS.lock();
+    vfs.mkdir(path)
 }
 
 /// Checks if a file exists.
 pub fn file_exists(path: &str) -> bool {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().exists(path)
+    let vfs = VFS.lock();
+    vfs.exists(path)
 }
 
 /// Lists files in a directory.
 pub fn list_dir(path: &str) -> Vec<FileMetadata> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().list(path)
+    let vfs = VFS.lock();
+    vfs.list(path)
 }
 
 /// Returns (total_file_count, total_bytes_used).
 pub fn get_fs_stats() -> (usize, usize) {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().stats()
+    let vfs = VFS.lock();
+    vfs.stats()
 }
 
 /// Returns a list of all non-directory file paths.
 pub fn get_all_file_paths() -> Vec<String> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().all_files()
+    let vfs = VFS.lock();
+    vfs.all_files()
 }
 
 /// Returns a list of all file and directory paths.
 pub fn get_all_vfs_paths() -> Vec<String> {
     let _guard = InterruptGuard::acquire();
-    VFS.lock().all_paths()
+    let vfs = VFS.lock();
+    vfs.all_paths()
 }

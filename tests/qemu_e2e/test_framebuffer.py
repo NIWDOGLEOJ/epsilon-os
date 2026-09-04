@@ -10,9 +10,21 @@ def test_framebuffer_rendering(qemu: QemuHarness):
     """
     # Wait for compositor active
     qemu.wait_for_serial(r"AegisOS macOS Desktop Compositor Active", timeout=12.0)
-    time.sleep(1.0)  # Allow a few frames to render and swap
 
+    # Poll for the first rendered frame rather than sleeping a fixed amount.
+    # Measured at 0.97-1.31s after the compositor announces itself, which
+    # straddles any single hardcoded wait; the desktop now boots two Ring 3 GUI
+    # processes that share the round-robin with it. The bound still catches the
+    # failure this test exists for -- a boot that renders nothing at all.
+    # Polling for "not flat" alone can catch a half-composited frame, whose
+    # palette is legitimately thin, so wait for a fully drawn one.
+    deadline = time.time() + 10.0
     img = qemu.screendump()
+    while time.time() < deadline:
+        if not img.is_flat_color(threshold=10) and len(img.unique_colors(step=8)) >= 50:
+            break
+        time.sleep(0.25)
+        img = qemu.screendump()
 
     # 1. Assert Dimensions
     assert img.width == 1280, f"Expected width 1280, got {img.width}"
@@ -20,7 +32,7 @@ def test_framebuffer_rendering(qemu: QemuHarness):
 
     # 2. Assert Not Flat Color (catches boot hang where screen was single flat color)
     assert not img.is_flat_color(threshold=10), (
-        "Framebuffer is a single flat solid color! Compositor failed to render."
+        "Framebuffer never left a single flat solid color! Compositor failed to render."
     )
 
     # 3. Assert Rich Palette Diversity (> 50 unique colors sampled across screen)

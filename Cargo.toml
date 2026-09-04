@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 authors = ["AegisOS Core Team"]
 description = "A crash-resilient x86_64 operating system in Rust with macOS desktop environment"
+build = "build.rs"
+
+# The Ring 3 programs under userspace/ are built by build.rs, not as workspace
+# members: they need a different linker script, code model and target directory.
+[workspace]
+exclude = ["userspace", "tests/e2e"]
 
 [features]
 default = []

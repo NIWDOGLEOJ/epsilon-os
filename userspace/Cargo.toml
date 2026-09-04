@@ -1,0 +1,32 @@
+[package]
+name = "aegis_user"
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately dependency-free. These run in Ring 3 with nothing beneath them
+# but the syscall table, so anything they link has to be reachable from `core`
+# plus the runtime in `rt.rs`.
+[dependencies]
+
+[lib]
+name = "aegis_user"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aegis_terminal"
+path = "src/bin/terminal.rs"
+
+[[bin]]
+name = "aegis_crash_test"
+path = "src/bin/crash_test.rs"
+
+[[bin]]
+name = "aegis_activity_monitor"
+path = "src/bin/activity_monitor.rs"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = false
+codegen-units = 1
+debug = true

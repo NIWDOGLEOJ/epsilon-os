@@ -1,7 +1,8 @@
 //! Integrated Core System Applications & Demo Suite for AegisOS
 //!
-//! Exposes Crash-Test Demo, Activity Monitor, Terminal Shell, AegisPad,
-//! Calculator, Snake Arcade Game, Aegis Browser, and About Dialog.
+//! Exposes all fourteen system applications: Crash-Test Demo, Activity Monitor,
+//! Terminal Shell, Aegis Files, AegisPad, Aegis Browser, Minesweeper, AegisSynth,
+//! AegisChat, Calculator, Snake, Aegis Paint, System Settings, and About Dialog.
 
 pub mod about;
 pub mod activity_monitor;
@@ -107,6 +108,11 @@ impl AppSuite {
             AppId::Paint => self.paint.render(win, fb),
             AppId::Settings => self.settings.render(win, fb),
             AppId::AboutDialog => self.about.render(win, fb),
+            // Content for this window is produced by a Ring 3 process, which
+            // draws into a shared surface the kernel only reads.
+            AppId::UserTerminal | AppId::UserCrashTest | AppId::UserActivityMonitor => {
+                render_user_surface(win, fb)
+            }
         }
     }
 
@@ -167,6 +173,9 @@ impl AppSuite {
                     SettingsAction::None => AppAction::None,
                 }
             }
+            // A Ring 3 window takes no kernel-side click handling; the process
+            // owns everything inside its client rect.
+            AppId::UserTerminal | AppId::UserCrashTest | AppId::UserActivityMonitor => AppAction::None,
             AppId::AboutDialog => {
                 if self.about.handle_click(win, x, y) {
                     AppAction::CloseWindow
@@ -238,3 +247,44 @@ impl AppSuite {
     }
 }
 
+
+/// Blits a Ring 3 process's window surface into its client rect.
+///
+/// Clipped to whichever is smaller, so a window larger than the surface shows
+/// background around it and a smaller one shows the top-left corner. The kernel
+/// only ever reads here: user code cannot make the compositor write anywhere.
+fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
+    use crate::gui::surface::{
+        copy_row, snapshot_frames, SURFACE_FRAME_COUNT, SURFACE_HEIGHT, SURFACE_WIDTH,
+    };
+    use crate::memory::PhysAddr;
+
+    let rect = win.client_rect();
+
+    // A Ring 3 window without a PID has no surface to read.
+    let Some(pid) = win.pid else {
+        return;
+    };
+
+    // Snapshot the frame list, then blit without holding the lock -- see
+    // `surface::snapshot_frames` for why holding it here would deadlock.
+    let mut frames = [PhysAddr::new(0); SURFACE_FRAME_COUNT];
+    let count = snapshot_frames(pid, &mut frames);
+    if count == 0 {
+        return;
+    }
+    let frames = &frames[..count];
+
+    let width = core::cmp::min(rect.width as usize, SURFACE_WIDTH);
+    let height = core::cmp::min(rect.height as usize, SURFACE_HEIGHT);
+
+    // Row at a time. Per-pixel `draw_pixel` costs a bounds check, a clip test
+    // and an alpha branch each; at 640x384 per window that dominated the frame
+    // and dropped the compositor to about one frame a second once three Ring 3
+    // windows were open.
+    let mut row = [0u32; SURFACE_WIDTH];
+    for y in 0..height {
+        copy_row(frames, y, &mut row[..width]);
+        fb.blit_row(rect.x, rect.y + y as i32, &row[..width]);
+    }
+}

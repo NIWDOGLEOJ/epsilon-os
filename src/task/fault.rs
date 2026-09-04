@@ -17,7 +17,8 @@ static CRASH_CALLBACK: Mutex<Option<CrashCallback>> = Mutex::new(None);
 pub fn register_crash_callback(cb: CrashCallback) {
     // CRASH_CALLBACK is read from exception context in `handle_user_fault`.
     let _guard = crate::arch::InterruptGuard::acquire();
-    *CRASH_CALLBACK.lock() = Some(cb);
+    let mut crash_callback = CRASH_CALLBACK.lock();
+    *crash_callback = Some(cb);
 }
 
 /// Primary Fault Isolation Handler for Ring 3 Userspace Exceptions.

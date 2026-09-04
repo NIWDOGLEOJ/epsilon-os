@@ -34,6 +34,11 @@ try:
     from . import test_editor_advanced
     from . import test_synth
     from . import test_chat
+    from . import test_elf_syscall
+    from . import test_ring3_terminal
+    from . import test_ring3_mouse
+    from . import test_ring3_crashtest
+    from . import test_ring3_monitor
 except ImportError:
     from tests.qemu_e2e.harness import QemuHarness
     from tests.qemu_e2e import test_boot
@@ -56,6 +61,11 @@ except ImportError:
     from tests.qemu_e2e import test_editor_advanced
     from tests.qemu_e2e import test_synth
     from tests.qemu_e2e import test_chat
+    from tests.qemu_e2e import test_elf_syscall
+    from tests.qemu_e2e import test_ring3_terminal
+    from tests.qemu_e2e import test_ring3_mouse
+    from tests.qemu_e2e import test_ring3_crashtest
+    from tests.qemu_e2e import test_ring3_monitor
 
 
 # ANSI Color codes
@@ -88,6 +98,11 @@ TEST_REGISTRY: List[Tuple[str, Callable]] = [
     ("editor_advanced::test_editor_advanced_lifecycle", test_editor_advanced.test_editor_advanced_lifecycle),
     ("synth::test_synth_lifecycle", test_synth.test_synth_lifecycle),
     ("chat::test_chat_lifecycle", test_chat.test_chat_lifecycle),
+    ("elf_syscall::test_elf_load_syscall_and_isolation", test_elf_syscall.test_elf_load_syscall_and_isolation),
+    ("ring3_terminal::test_ring3_terminal_runs_and_is_isolated", test_ring3_terminal.test_ring3_terminal_runs_and_is_isolated),
+    ("ring3_mouse::test_ring3_mouse_input_and_isolation", test_ring3_mouse.test_ring3_mouse_input_and_isolation),
+    ("ring3_crashtest::test_ring3_crashtest_injects_and_survives", test_ring3_crashtest.test_ring3_crashtest_injects_and_survives),
+    ("ring3_monitor::test_ring3_monitor_samples_and_kills", test_ring3_monitor.test_ring3_monitor_samples_and_kills),
     ("stability::test_clock_progress", test_stability.test_clock_progress),
     ("stability::test_input_flood_resilience", test_stability.test_input_flood_resilience),
 ]

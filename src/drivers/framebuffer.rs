@@ -148,6 +148,46 @@ impl Framebuffer {
         self.mark_dirty(Rect::new(start, y, (end - start) as u32, 1));
     }
 
+    /// Copies a row of opaque ARGB pixels straight into the backbuffer.
+    ///
+    /// The fast path for compositing a Ring 3 window surface. Going through
+    /// `draw_pixel` costs a bounds check, a clip test and an alpha branch per
+    /// pixel; at 640x384 per window per frame that dominated the frame time and
+    /// dropped the compositor to about one frame a second with three such
+    /// windows open. Clipping once per row and copying the span instead makes
+    /// the same work a slice copy.
+    ///
+    /// Source pixels are treated as opaque: a process owns every pixel of its
+    /// own surface, so there is nothing beneath to blend with.
+    pub fn blit_row(&mut self, x: i32, y: i32, pixels: &[u32]) {
+        if y < 0 || (y as usize) >= self.height || pixels.is_empty() {
+            return;
+        }
+
+        // Clip horizontally against the framebuffer and the active clip rect,
+        // and reject the row entirely if it falls outside the clip vertically.
+        let mut start = x;
+        let mut end = x + pixels.len() as i32;
+        if let Some(clip) = self.clip_rect {
+            if y < clip.y || y >= clip.y + clip.height as i32 {
+                return;
+            }
+            start = start.max(clip.x);
+            end = end.min(clip.x + clip.width as i32);
+        }
+        start = start.max(0);
+        end = end.min(self.width as i32);
+        if start >= end {
+            return;
+        }
+
+        let src_offset = (start - x) as usize;
+        let count = (end - start) as usize;
+        let row_base = (y as usize) * self.width + start as usize;
+        self.backbuffer[row_base..row_base + count]
+            .copy_from_slice(&pixels[src_offset..src_offset + count]);
+    }
+
     /// Reads a pixel value from the backbuffer.
     #[inline]
     pub fn get_pixel(&self, x: i32, y: i32) -> Option<Color> {
