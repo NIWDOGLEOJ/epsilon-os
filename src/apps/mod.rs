@@ -1,7 +1,8 @@
 //! Integrated Core System Applications & Demo Suite for AegisOS
 //!
-//! Exposes Crash-Test Demo, Activity Monitor, Terminal Shell, AegisPad,
-//! Calculator, Snake Arcade Game, Aegis Browser, and About Dialog.
+//! Exposes all fourteen system applications: Crash-Test Demo, Activity Monitor,
+//! Terminal Shell, Aegis Files, AegisPad, Aegis Browser, Minesweeper, AegisSynth,
+//! AegisChat, Calculator, Snake, Aegis Paint, System Settings, and About Dialog.
 
 pub mod about;
 pub mod activity_monitor;

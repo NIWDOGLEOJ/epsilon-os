@@ -64,7 +64,8 @@ Note: `tests/e2e/` contains a historical 4-tier design simulation implemented in
 
 ## 2. Test Architecture & Directory Layout
 
-The E2E test suite resides in `/home/godjoel/teamwork_projects/aegis_os/tests/e2e/`:
+The historical host-simulation suite resides in `tests/e2e/`, relative to the
+repository root:
 
 ```
 tests/e2e/
@@ -204,19 +205,44 @@ cargo run --manifest-path tests/e2e/Cargo.toml --bin e2e_runner -- --json
 
 ### 4.4 QEMU Headless Integration Verification
 ```bash
-./run_qemu.sh --headless --test-assert
+./run_e2e_tests.sh    # builds the ISO if stale, then runs the QEMU E2E suite
+./run_selftest.sh     # builds with --features selftest, exits via isa-debug-exit
+```
+
+`run_qemu.sh` takes no arguments — it always builds and boots graphically. Earlier
+revisions of this document showed `./run_qemu.sh --headless --test-assert`; those flags
+have never existed. For a headless boot without the test harness, invoke QEMU directly:
+
+```bash
+qemu-system-x86_64 -cdrom aegis_os.iso -m 4G -accel kvm -vga std \
+                   -display none -serial stdio
 ```
 
 ---
 
 ## 5. Coverage Statistics & Metrics
 
-- **Total Test Cases:** 135 tests
-  - Tier 1: 61 tests (>= 5 per feature F1..F12)
-  - Tier 2: 61 tests (>= 5 per feature F1..F12)
-  - Tier 3: 8 complex pairwise interaction tests
-  - Tier 4: 5 multi-step real-world workflow tests
-- **Requirement Coverage:** 100% of R1, R2, R3, R4, R5, R6
-- **Feature Coverage:** 100% of F1 through F12
-- **Pass Rate:** 100% (135/135 tests passing)
-- **Memory Constraint Verified:** Total idle system memory usage is strictly < 60 MB RAM.
+### 5.1 Suites that exercise the kernel
+
+- **QEMU E2E suite (`tests/qemu_e2e/`)**: 22 test functions across 20 modules, driving
+  the real `aegis_os.iso`. Run with `./run_e2e_tests.sh`.
+- **In-kernel self-tests (`src/selftest/`)**: 14 bare-metal suites behind
+  `--features selftest`. Run with `./run_selftest.sh`.
+- **Memory constraint verified by boot**: 16 MB used of 3064 MB at idle desktop,
+  inside the < 60 MB budget.
+
+HANDOFF.md records these at 22/22 and 14/14 as of milestone 17. Run the scripts for
+numbers from your own checkout rather than citing that figure as current.
+
+### 5.2 Historical model (`tests/e2e/`) — case counts only, not a pass rate
+
+- Tier 1: 61 cases (>= 5 per feature F1..F12)
+- Tier 2: 61 cases (>= 5 per feature F1..F12)
+- Tier 3: 8 pairwise interaction cases
+- Tier 4: 5 multi-step workflow cases
+
+Earlier revisions reported these 135 cases as a "100% pass rate" covering R1–R6 and
+F1–F12. They cover models of those features, written in host `std` Rust; no file in
+`tests/e2e/` references the kernel crate, so the suite passed while the kernel
+deadlocked on boot. The counts are kept as a description of the design; the pass rate
+has been removed. See section 3 of TEST_READY.md.
