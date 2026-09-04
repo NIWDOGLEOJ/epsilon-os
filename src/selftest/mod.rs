@@ -40,118 +40,125 @@ pub fn run_kernel_selftests() {
     serial_println!("=======================================================");
 
     let mut passed_suites = 0;
-    let total_suites = 14;
+    let total_suites = 15;
 
     // 1. Physical Frame Allocator Test Suite
-    serial_println!("[SELFTEST:1/14] Running Physical Frame Allocator Tests...");
+    serial_println!("[SELFTEST:1/15] Running Physical Frame Allocator Tests...");
     if let Err(e) = test_physical_frame_allocator() {
         fail_and_exit("Physical Frame Allocator", e);
     }
-    serial_println!("[SELFTEST:1/14] [PASS] Physical Frame Allocator Suite OK.");
+    serial_println!("[SELFTEST:1/15] [PASS] Physical Frame Allocator Suite OK.");
     passed_suites += 1;
 
     // 2. PML4 Paging & Address Space Isolation Test Suite
-    serial_println!("[SELFTEST:2/14] Running PML4 Paging & Isolation Tests...");
+    serial_println!("[SELFTEST:2/15] Running PML4 Paging & Isolation Tests...");
     if let Err(e) = test_pml4_paging_and_isolation() {
         fail_and_exit("PML4 Paging & Isolation", e);
     }
-    serial_println!("[SELFTEST:2/14] [PASS] PML4 Paging & Isolation Suite OK.");
+    serial_println!("[SELFTEST:2/15] [PASS] PML4 Paging & Isolation Suite OK.");
     passed_suites += 1;
 
     // 3. Kernel Dynamic Heap Allocator Test Suite
-    serial_println!("[SELFTEST:3/14] Running Kernel Dynamic Heap Tests...");
+    serial_println!("[SELFTEST:3/15] Running Kernel Dynamic Heap Tests...");
     if let Err(e) = test_kernel_heap() {
         fail_and_exit("Kernel Dynamic Heap", e);
     }
-    serial_println!("[SELFTEST:3/14] [PASS] Kernel Dynamic Heap Suite OK.");
+    serial_println!("[SELFTEST:3/15] [PASS] Kernel Dynamic Heap Suite OK.");
     passed_suites += 1;
 
     // 4. Preemptive Task Scheduler & Process Lifecycle Suite
-    serial_println!("[SELFTEST:4/14] Running Task Scheduler Lifecycle Tests...");
+    serial_println!("[SELFTEST:4/15] Running Task Scheduler Lifecycle Tests...");
     if let Err(e) = test_scheduler_lifecycle() {
         fail_and_exit("Task Scheduler Lifecycle", e);
     }
-    serial_println!("[SELFTEST:4/14] [PASS] Task Scheduler Lifecycle Suite OK.");
+    serial_println!("[SELFTEST:4/15] [PASS] Task Scheduler Lifecycle Suite OK.");
     passed_suites += 1;
 
     // 5. In-Memory Virtual Filesystem (RAM Disk VFS) Suite
-    serial_println!("[SELFTEST:5/14] Running In-Memory VFS Tests...");
+    serial_println!("[SELFTEST:5/15] Running In-Memory VFS Tests...");
     if let Err(e) = test_virtual_filesystem() {
         fail_and_exit("In-Memory VFS", e);
     }
-    serial_println!("[SELFTEST:5/14] [PASS] In-Memory VFS Suite OK.");
+    serial_println!("[SELFTEST:5/15] [PASS] In-Memory VFS Suite OK.");
     passed_suites += 1;
 
     // 6. Hardware PC Speaker & Audio Subsystem Suite
-    serial_println!("[SELFTEST:6/14] Running PC Speaker Audio Tests...");
+    serial_println!("[SELFTEST:6/15] Running PC Speaker Audio Tests...");
     if let Err(e) = test_pc_speaker_driver() {
         fail_and_exit("PC Speaker Audio", e);
     }
-    serial_println!("[SELFTEST:6/14] [PASS] PC Speaker Audio Suite OK.");
+    serial_println!("[SELFTEST:6/15] [PASS] PC Speaker Audio Suite OK.");
     passed_suites += 1;
 
     // 7. Desktop Wallpaper Engine & PPM Image Parser Suite
-    serial_println!("[SELFTEST:7/14] Running Wallpaper & PPM Parser Tests...");
+    serial_println!("[SELFTEST:7/15] Running Wallpaper & PPM Parser Tests...");
     if let Err(e) = test_wallpaper_and_ppm_parser() {
         fail_and_exit("Wallpaper & PPM Parser", e);
     }
-    serial_println!("[SELFTEST:7/14] [PASS] Wallpaper & PPM Parser Suite OK.");
+    serial_println!("[SELFTEST:7/15] [PASS] Wallpaper & PPM Parser Suite OK.");
     passed_suites += 1;
 
     // 8. Scientific Calculator 2.0 Engine & Math Functions Suite
-    serial_println!("[SELFTEST:8/14] Running Scientific Calculator Tests...");
+    serial_println!("[SELFTEST:8/15] Running Scientific Calculator Tests...");
     if let Err(e) = test_scientific_calculator_engine() {
         fail_and_exit("Scientific Calculator", e);
     }
-    serial_println!("[SELFTEST:8/14] [PASS] Scientific Calculator Suite OK.");
+    serial_println!("[SELFTEST:8/15] [PASS] Scientific Calculator Suite OK.");
     passed_suites += 1;
 
     // 9. Terminal 2.0 Engine (History, Tab Auto-Completion & ANSI Codes)
-    serial_println!("[SELFTEST:9/14] Running Terminal 2.0 Engine Tests...");
+    serial_println!("[SELFTEST:9/15] Running Terminal 2.0 Engine Tests...");
     if let Err(e) = test_terminal_engine() {
         fail_and_exit("Terminal 2.0 Engine", e);
     }
-    serial_println!("[SELFTEST:9/14] [PASS] Terminal 2.0 Engine Suite OK.");
+    serial_println!("[SELFTEST:9/15] [PASS] Terminal 2.0 Engine Suite OK.");
     passed_suites += 1;
 
     // 10. AI Agent Kernel Bridge, Spotlight Search & Aegis Browser
-    serial_println!("[SELFTEST:10/14] Running AI Agent, Spotlight & Browser Tests...");
+    serial_println!("[SELFTEST:10/15] Running AI Agent, Spotlight & Browser Tests...");
     if let Err(e) = test_agent_spotlight_browser_engine() {
         fail_and_exit("AI Agent, Spotlight & Browser", e);
     }
-    serial_println!("[SELFTEST:10/14] [PASS] AI Agent, Spotlight & Browser Suite OK.");
+    serial_println!("[SELFTEST:10/15] [PASS] AI Agent, Spotlight & Browser Suite OK.");
     passed_suites += 1;
 
     // 11. Minesweeper Retro Arcade Game Suite
-    serial_println!("[SELFTEST:11/14] Running Minesweeper Retro Arcade Tests...");
+    serial_println!("[SELFTEST:11/15] Running Minesweeper Retro Arcade Tests...");
     if let Err(e) = test_minesweeper_engine() {
         fail_and_exit("Minesweeper Retro Arcade", e);
     }
-    serial_println!("[SELFTEST:11/14] [PASS] Minesweeper Retro Arcade Suite OK.");
+    serial_println!("[SELFTEST:11/15] [PASS] Minesweeper Retro Arcade Suite OK.");
     passed_suites += 1;
 
     // 12. AegisPad 2.0 Advanced Multi-Tab Editor Suite
-    serial_println!("[SELFTEST:12/14] Running AegisPad 2.0 Advanced Editor Tests...");
+    serial_println!("[SELFTEST:12/15] Running AegisPad 2.0 Advanced Editor Tests...");
     if let Err(e) = test_editor_advanced_engine() {
         fail_and_exit("AegisPad 2.0 Advanced Editor", e);
     }
-    serial_println!("[SELFTEST:12/14] [PASS] AegisPad 2.0 Advanced Editor Suite OK.");
+    serial_println!("[SELFTEST:12/15] [PASS] AegisPad 2.0 Advanced Editor Suite OK.");
     passed_suites += 1;
 
     // 13. AegisSynth Chiptune Synthesizer & Pattern Sequencer Suite
-    serial_println!("[SELFTEST:13/14] Running AegisSynth Chiptune Studio Tests...");
+    serial_println!("[SELFTEST:13/15] Running AegisSynth Chiptune Studio Tests...");
     if let Err(e) = test_synth_engine() {
         fail_and_exit("AegisSynth Chiptune Studio", e);
     }
-    serial_println!("[SELFTEST:13/14] [PASS] AegisSynth Chiptune Studio Suite OK.");
+    serial_println!("[SELFTEST:13/15] [PASS] AegisSynth Chiptune Studio Suite OK.");
     passed_suites += 1;
 
     // 14. In-Kernel Virtual Network Stack & AegisChat Suite
-    serial_println!("[SELFTEST:14/14] Running Virtual Network & AegisChat Tests...");
+    serial_println!("[SELFTEST:14/15] Running Virtual Network & AegisChat Tests...");
     if let Err(e) = test_network_loopback_and_chat_engine() {
         fail_and_exit("Virtual Network & AegisChat", e);
     }
-    serial_println!("[SELFTEST:14/14] [PASS] Virtual Network & AegisChat Suite OK.");
+    serial_println!("[SELFTEST:14/15] [PASS] Virtual Network & AegisChat Suite OK.");
+    passed_suites += 1;
+
+    serial_println!("[SELFTEST:15/15] Running ELF64 Loader & Syscall Interface Tests...");
+    if let Err(e) = test_elf_loader_and_syscall() {
+        fail_and_exit("ELF64 Loader & Syscall Interface", e);
+    }
+    serial_println!("[SELFTEST:15/15] [PASS] ELF64 Loader & Syscall Interface Suite OK.");
     passed_suites += 1;
 
     serial_println!("=======================================================");
@@ -1151,3 +1158,98 @@ fn test_network_loopback_and_chat_engine() -> Result<(), &'static str> {
 
 
 
+
+/// Test 15: ELF64 Loader & Syscall Interface Test Suite
+///
+/// Covers the parser's accept and reject paths plus the syscall MSR programming.
+/// The end-to-end path -- a loaded program issuing `syscall` and another being
+/// reaped after faulting -- is exercised by booting rather than from here, since
+/// it needs a live Ring 3 task and the scheduler; see `tests/qemu_e2e/test_elf_syscall.py`.
+fn test_elf_loader_and_syscall() -> Result<(), &'static str> {
+    use crate::task::elf::{build_test_image, validate, ElfError};
+    use crate::task::userprogs::USER_HELLO_CODE;
+
+    // A. A well-formed image round-trips, and the entry lands past the headers.
+    const VADDR: u64 = 0x40_0000;
+    let image = build_test_image(&USER_HELLO_CODE, VADDR);
+    let entry = validate(&image).map_err(|_| "Valid test image was rejected by the ELF parser")?;
+    if entry != VADDR + 120 {
+        return Err("ELF entry point did not resolve past the 120-byte header block");
+    }
+    if image.len() != 120 + USER_HELLO_CODE.len() {
+        return Err("build_test_image produced an unexpected image length");
+    }
+
+    // B. Truncation is rejected rather than read out of bounds.
+    if validate(&image[..32]) != Err(ElfError::TooSmall) {
+        return Err("Truncated image was not rejected with TooSmall");
+    }
+
+    // C. Magic, class and architecture are all checked.
+    let mut bad = image.clone();
+    bad[1] = b'X';
+    if validate(&bad) != Err(ElfError::BadMagic) {
+        return Err("Corrupt ELF magic was not rejected");
+    }
+
+    let mut bad = image.clone();
+    bad[4] = 1; // ELFCLASS32
+    if validate(&bad) != Err(ElfError::NotElf64) {
+        return Err("32-bit ELF class was not rejected");
+    }
+
+    let mut bad = image.clone();
+    bad[18] = 0x28; // EM_ARM
+    if validate(&bad) != Err(ElfError::WrongArchitecture) {
+        return Err("Non-x86_64 machine type was not rejected");
+    }
+
+    // D. A segment aimed at kernel space is refused. p_vaddr sits at offset
+    //    120 - 56 + 16 = 80 in this single-program-header layout.
+    let mut bad = image.clone();
+    let vaddr_off = 64 + 16;
+    bad[vaddr_off..vaddr_off + 8].copy_from_slice(&0xFFFF_8000_0000_0000u64.to_le_bytes());
+    if validate(&bad) != Err(ElfError::SegmentOutOfRange) {
+        return Err("Segment targeting kernel space was not rejected");
+    }
+
+    // E. A segment overlapping the user stack is refused.
+    let mut bad = image.clone();
+    bad[vaddr_off..vaddr_off + 8].copy_from_slice(&0x0000_7FFF_FFFF_0000u64.to_le_bytes());
+    if validate(&bad) != Err(ElfError::SegmentOutOfRange) {
+        return Err("Segment overlapping the user stack was not rejected");
+    }
+
+    // F. filesz greater than memsz is malformed. p_filesz is at 64 + 32.
+    let mut bad = image.clone();
+    let filesz_off = 64 + 32;
+    bad[filesz_off..filesz_off + 8].copy_from_slice(&0xFFFF_FFFFu64.to_le_bytes());
+    if !matches!(
+        validate(&bad),
+        Err(ElfError::SegmentMalformed) | Err(ElfError::SegmentOutOfRange)
+    ) {
+        return Err("Oversized p_filesz was not rejected");
+    }
+
+    // G. EFER must actually carry SCE and NXE, or `syscall` raises #UD and every
+    //    NO_EXECUTE mapping faults on a reserved bit.
+    let efer = unsafe {
+        let (high, low): (u32, u32);
+        core::arch::asm!(
+            "rdmsr",
+            in("ecx") 0xC000_0080u32,
+            out("eax") low,
+            out("edx") high,
+            options(nomem, nostack, preserves_flags)
+        );
+        ((high as u64) << 32) | (low as u64)
+    };
+    if efer & (1 << 0) == 0 {
+        return Err("EFER.SCE is clear: syscall would raise #UD");
+    }
+    if efer & (1 << 11) == 0 {
+        return Err("EFER.NXE is clear: NO_EXECUTE mappings would fault");
+    }
+
+    Ok(())
+}

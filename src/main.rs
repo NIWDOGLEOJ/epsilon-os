@@ -132,6 +132,11 @@ pub extern "C" fn _start() -> ! {
     arch::idt::init_idt();
     serial_println!("[OK] IDT & 8259 PIC initialized (IRQs remapped to 32..47).");
 
+    // 4b. Enable SYSCALL/SYSRET. Must follow the GDT, since STAR encodes selectors
+    //     that have to already be valid, and must precede any NO_EXECUTE mapping,
+    //     since it is what sets EFER.NXE.
+    arch::syscall::init_syscall();
+
     // 5. Query Limine Kernel Physical & Virtual Base Addresses
     if let Some(exec_resp) = KERNEL_ADDR_REQUEST.get_response() {
         serial_println!(
@@ -222,6 +227,21 @@ pub extern "C" fn _start() -> ! {
         "[OK] Spawned System Tasks: Monitor(PID {}), Terminal(PID {}), Pad(PID {}), CrashTest(PID {}), UserCalc(PID {}), FaultTest(PID {})",
         pid_mon, pid_term, pid_pad, pid_crash, pid_user, pid_fault
     );
+
+    // 10c. Load two real ELF64 programs into Ring 3. Unlike the payloads above,
+    // these are parsed from an image rather than copied in as raw bytes, and they
+    // reach the kernel through `syscall` rather than only being able to fault.
+    let hello_image = task::elf::build_test_image(&task::userprogs::USER_HELLO_CODE, 0x40_0000);
+    match task::spawn_user_elf("elf_hello", &hello_image) {
+        Ok(pid) => serial_println!("[ELF] Loaded 'elf_hello' as PID {}.", pid),
+        Err(e) => serial_println!("[ELF] Failed to load 'elf_hello': {}", e.as_str()),
+    }
+
+    let crash_image = task::elf::build_test_image(&task::userprogs::USER_CRASH_CODE, 0x40_0000);
+    match task::spawn_user_elf("elf_crasher", &crash_image) {
+        Ok(pid) => serial_println!("[ELF] Loaded 'elf_crasher' as PID {}.", pid),
+        Err(e) => serial_println!("[ELF] Failed to load 'elf_crasher': {}", e.as_str()),
+    }
 
     // 11. Initialize Window Manager & Applications Suite
     let mut wm = WindowManager::new(screen_w, screen_h);

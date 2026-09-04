@@ -200,6 +200,13 @@ pub fn set_tss_rsp0(stack_top: u64) {
     unsafe {
         let tss_ptr = &raw mut TSS;
         (*tss_ptr).rsp0 = stack_top;
+
+        // The `syscall` instruction, unlike an interrupt, does not consult the
+        // TSS -- it leaves RSP pointing at the user stack and expects the entry
+        // stub to do the switch itself. Mirroring RSP0 here keeps the stub's
+        // stack in step with the scheduler for free, since this is already
+        // called on every context switch.
+        crate::arch::syscall::SYSCALL_KERNEL_RSP = stack_top;
     }
 }
 

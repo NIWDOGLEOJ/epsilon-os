@@ -23,9 +23,9 @@ documentation that reported success the code had not achieved (see
 | 1. Old hardware, modern software | Not started. The blocker is drivers, not design — see the driver gap below. |
 | 2. Intel & Ryzen 2020+ | Boots x86_64 under Limine with BIOS/UEFI support, which is the right foundation. But verified only in QEMU, and the driver set targets 1995-era peripherals. |
 | 3. Smooth and well optimized | True where it has been measured: TSC-calibrated pacing to a 16.667 ms frame budget, all software-rendered. No GPU acceleration, so this holds at 1280x800 in a VM and is untested at modern panel resolutions. |
-| 4. App crash ≠ OS crash | **The mechanism works and is verified. No real application uses it yet.** See below — this is the most important gap to close. |
+| 4. App crash ≠ OS crash | **The mechanism works and is verified, and loaded ELF programs are now covered by it. The fourteen apps still are not** — they run in Ring 0. See below. |
 | 5. Efficient resource usage | Genuinely strong: 16 MB used of 3064 MB at idle desktop. Offset by using one CPU core; there is no SMP support. |
-| 6. Support all Windows applications | No foundation exists yet. There is no syscall interface, no program loader, and no Win32 surface of any kind. This is the largest goal on the list by a wide margin. |
+| 6. Support all Windows applications | First foundations exist: a syscall ABI and an ELF64 loader (see below). No PE loader and no Win32 surface. This is still the largest goal on the list by a wide margin. |
 | 7. macOS-like optimization | The desktop follows macOS visually. In the engineering sense — GPU compositing, unified memory handling, power management — none of that is present. |
 
 ## Goal 4 is closer than it looks, and further than it reads
@@ -51,24 +51,27 @@ demonstration and not yet true for the product.
 
 ## The two things standing between here and the rest
 
-### A userspace ABI
+### A userspace ABI — steps 1 and 2 done
 
-There is no syscall interface. A Ring 3 process in this kernel cannot ask the
-kernel for anything — it can compute and it can fault. There is also no
-program loader of any kind: no ELF loader, no PE/COFF loader. Userspace code
-is `include`d as literal machine-code bytes at compile time.
+The plan was three steps, and the first two have landed:
 
-This one piece of work unblocks goals 4 and 6 simultaneously, which makes it
-the natural next milestone:
+1. **A syscall entry path.** ✅ `syscall`/`sysret` via `IA32_LSTAR`, with
+   `exit`, `write`, `yield`, `getpid` and `uptime`. See
+   [`docs/SYSCALL_ABI.md`](docs/SYSCALL_ABI.md).
+2. **An ELF64 loader.** ✅ `ET_EXEC` images are parsed, bounds-checked, and
+   mapped with per-segment permissions, so a process is a file rather than a
+   byte array.
+3. **Move one application across the boundary.** ⬜ Not started. The Terminal
+   is the natural candidate, and it needs syscalls the ABI does not have yet —
+   at minimum a way to draw and a way to receive input events.
 
-1. A syscall entry path (`syscall`/`sysret` with `IA32_LSTAR`, or a software
-   interrupt gate) with a small initial call set — write, exit, yield, and a
-   framebuffer or IPC primitive for drawing.
-2. An ELF64 loader, so a process is a file rather than a byte array.
-3. Move one application — the Terminal is the natural candidate — across the
-   boundary and prove it survives its own panic.
+Verified by booting: a loaded ELF program prints through `SYS_WRITE` and exits
+through `SYS_EXIT` with status 0, and a second loaded program makes a syscall
+and *then* faults, and is reaped with the desktop still running. Both are
+asserted in `tests/qemu_e2e/test_elf_syscall.py`.
 
-Until step 3 lands, goal 4 is a property of the demo rather than the system.
+Until step 3 lands, goal 4 remains a property of the demo rather than of the
+applications: the fourteen apps still run in Ring 0.
 
 ### The driver gap
 
@@ -138,5 +141,7 @@ good:
 - Two test suites that exercise the actual kernel (`tests/qemu_e2e/`,
   `src/selftest/`), replacing a model suite that had reported success while
   the kernel deadlocked on boot.
+- A userspace ABI and an ELF64 loader, so Ring 3 is somewhere real programs can
+  run rather than only somewhere payloads go to crash.
 
 The kernel core is sound. What is missing is breadth, not depth.

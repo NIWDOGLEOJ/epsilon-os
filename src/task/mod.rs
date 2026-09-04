@@ -4,10 +4,13 @@
 //! 2-Phase Deferred Zombie Reaping, and Hardware Fault Isolation.
 
 pub mod context;
+pub mod elf;
 pub mod fault;
 pub mod pcb;
 pub mod scheduler;
+pub mod userprogs;
 
+pub use elf::{load_elf, ElfError};
 pub use fault::{handle_user_fault, register_crash_callback, CrashCallback};
 pub use pcb::{
     BlockReason, ExitReason, ProcessControlBlock, ProcessId, ProcessInfo, TaskContext,
@@ -16,7 +19,8 @@ pub use pcb::{
 pub use scheduler::{
     current_pid, get_cpu_usage, get_memory_stats, get_process_list, get_uptime_ticks,
     idle_task_entry, init,
-    kill_process, on_timer_tick, reap_zombies, spawn_process, spawn_user_bytecode, spawn_user_fault_test,
+    kill_process, on_timer_tick, reap_zombies, spawn_process, spawn_user_bytecode, spawn_user_elf,
+    spawn_user_fault_test,
     Scheduler, DEFAULT_QUANTUM_TICKS, KERNEL_STACK_SIZE, SCHEDULER,
 };
 

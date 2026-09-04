@@ -3,6 +3,7 @@
 pub mod gdt;
 pub mod idt;
 pub mod serial;
+pub mod syscall;
 pub mod time;
 
 pub use time::FramePacer;
@@ -55,5 +56,7 @@ pub fn init() -> (u16, u16, u16, u16, u16) {
     serial::init_serial();
     let selectors = gdt::init_gdt_tss();
     idt::init_idt();
+    // Must follow the GDT: STAR encodes selectors that have to already be valid.
+    syscall::init_syscall();
     selectors
 }

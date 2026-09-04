@@ -15,6 +15,7 @@ use crate::memory::{
     free_frame, get_kernel_pml4, map_page, phys_to_virt, PageTableFlags, VirtAddr, PAGE_SIZE,
 };
 use crate::task::context::{restore_context_to_interrupt, save_context_from_interrupt};
+use crate::task::elf::ElfError;
 use crate::task::pcb::{ExitReason, ProcessControlBlock, ProcessId, ProcessInfo, TaskContext, TaskPriority, TaskState};
 
 pub const DEFAULT_QUANTUM_TICKS: u32 = 1; // 1 tick @ 100Hz = 10ms quantum
@@ -174,6 +175,93 @@ impl Scheduler {
 
         self.tasks.push(pcb);
         pid
+    }
+
+    /// Loads an ELF64 executable into a private address space and spawns it in Ring 3.
+    ///
+    /// Unlike `spawn_user_bytecode`, the image is parsed rather than trusted: the
+    /// header is validated, segment ranges are bounds-checked against user space,
+    /// and per-segment permissions are carried into the page tables, so a
+    /// read-only segment is mapped read-only and a non-executable one is mapped
+    /// `NO_EXECUTE`.
+    ///
+    /// On failure every frame already allocated -- the PML4, the stack, and
+    /// whatever the loader mapped before it gave up -- is released before
+    /// returning, so a rejected image costs nothing permanent.
+    pub fn spawn_user_elf(&mut self, name: &str, image: &[u8]) -> Result<ProcessId, ElfError> {
+        let mut allocated_frames = Vec::new();
+
+        let user_pml4 = create_user_address_space();
+        allocated_frames.push(user_pml4);
+
+        // User stack, one page below the top of the lower half. `elf::parse`
+        // rejects any segment that would reach this address.
+        let ustack_virt = VirtAddr::new(0x0000_7FFF_FFFF_0000 - PAGE_SIZE as u64);
+        let ustack_frame = match alloc_zeroed_frame() {
+            Some(f) => f,
+            None => {
+                for frame in allocated_frames {
+                    free_frame(frame);
+                }
+                return Err(ElfError::OutOfMemory);
+            }
+        };
+        allocated_frames.push(ustack_frame);
+
+        map_page(
+            user_pml4,
+            ustack_virt,
+            ustack_frame,
+            PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::USER_ACCESSIBLE
+                | PageTableFlags::NO_EXECUTE,
+        );
+
+        let entry = match crate::task::elf::load_elf(image, user_pml4, &mut allocated_frames) {
+            Ok(entry) => entry,
+            Err(e) => {
+                for frame in allocated_frames {
+                    free_frame(frame);
+                }
+                return Err(e);
+            }
+        };
+
+        let pid = self.next_pid;
+        self.next_pid += 1;
+
+        let kstack = Box::leak(Box::new([0u8; KERNEL_STACK_SIZE]));
+        let kstack_top = kstack.as_ptr() as u64 + KERNEL_STACK_SIZE as u64;
+        let kstack_bottom = kstack.as_ptr() as u64;
+
+        let ustack_top_addr = 0x0000_7FFF_FFFF_0000u64;
+        let context = TaskContext::new_user_task(
+            entry.as_u64() as usize,
+            ustack_top_addr,
+            USER_CODE_SELECTOR,
+            USER_DATA_SELECTOR,
+        );
+
+        self.tasks.push(ProcessControlBlock {
+            pid,
+            name: name.to_string(),
+            state: TaskState::Ready,
+            priority: TaskPriority::Normal,
+            is_user: true,
+            pml4_root: user_pml4,
+            kernel_stack_bottom: VirtAddr::new(kstack_bottom),
+            kernel_stack_top: VirtAddr::new(kstack_top),
+            user_stack_top: VirtAddr::new(ustack_top_addr),
+            user_entry_point: entry,
+            allocated_frames,
+            context,
+            time_slice_remaining: DEFAULT_QUANTUM_TICKS,
+            total_cpu_ticks: 0,
+            window_id: None,
+        });
+
+        Ok(pid)
     }
 
     /// Spawns a user process executing raw machine code bytes in lower-half user space (0x00400000).
@@ -418,6 +506,12 @@ pub fn init() {
 pub fn spawn_process(name: &str, entry: extern "C" fn(), is_user: bool) -> ProcessId {
     let _guard = InterruptGuard::acquire();
     SCHEDULER.lock().spawn_process(name, entry, is_user)
+}
+
+/// Loads and spawns an ELF64 executable in Ring 3.
+pub fn spawn_user_elf(name: &str, image: &[u8]) -> Result<ProcessId, ElfError> {
+    let _guard = InterruptGuard::acquire();
+    SCHEDULER.lock().spawn_user_elf(name, image)
 }
 
 /// Spawns a user process executing raw bytecode in lower-half user space.

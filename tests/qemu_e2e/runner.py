@@ -34,6 +34,7 @@ try:
     from . import test_editor_advanced
     from . import test_synth
     from . import test_chat
+    from . import test_elf_syscall
 except ImportError:
     from tests.qemu_e2e.harness import QemuHarness
     from tests.qemu_e2e import test_boot
@@ -56,6 +57,7 @@ except ImportError:
     from tests.qemu_e2e import test_editor_advanced
     from tests.qemu_e2e import test_synth
     from tests.qemu_e2e import test_chat
+    from tests.qemu_e2e import test_elf_syscall
 
 
 # ANSI Color codes
@@ -88,6 +90,7 @@ TEST_REGISTRY: List[Tuple[str, Callable]] = [
     ("editor_advanced::test_editor_advanced_lifecycle", test_editor_advanced.test_editor_advanced_lifecycle),
     ("synth::test_synth_lifecycle", test_synth.test_synth_lifecycle),
     ("chat::test_chat_lifecycle", test_chat.test_chat_lifecycle),
+    ("elf_syscall::test_elf_load_syscall_and_isolation", test_elf_syscall.test_elf_load_syscall_and_isolation),
     ("stability::test_clock_progress", test_stability.test_clock_progress),
     ("stability::test_input_flood_resilience", test_stability.test_input_flood_resilience),
 ]

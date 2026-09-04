@@ -28,10 +28,13 @@ logged, and reaped — the desktop keeps running:
 
 The Crash-Test app has a button for each of those four faults. They all work.
 
-One caveat, because it matters: the isolation mechanism is real, but the fourteen
-applications are not yet using it. They run in Ring 0 as part of the compositor loop;
-the only true Ring 3 processes are the fault-test payloads themselves. A panic inside
-an app today still reaches the kernel panic handler. See [`GOALS.md`](GOALS.md).
+Ring 3 is now somewhere real programs can run: there is a `syscall` ABI and an ELF64
+loader, so a process can be parsed from an image and call into the kernel rather than
+only compute and fault. See [`docs/SYSCALL_ABI.md`](docs/SYSCALL_ABI.md).
+
+One caveat, because it matters: the fourteen applications are not yet using any of
+this. They run in Ring 0 as part of the compositor loop, so a panic inside an app
+still reaches the kernel panic handler. See [`GOALS.md`](GOALS.md).
 
 ## Build and run
 
@@ -131,18 +134,18 @@ Two suites exercise the real kernel, and one older tree does not.
 QEMU, drives it through the QEMU monitor (`sendkey`, mouse move/click), parses COM1
 serial output, and captures framebuffer screendumps as PPM to assert on colour variety
 and GUI chrome. It also reads `info registers` to check `RFLAGS.IF` stays set and `RIP`
-keeps advancing under load. 22 test suites across 20 modules:
+keeps advancing under load. 23 test functions across 21 modules:
 
 ```sh
 ./run_e2e_tests.sh
 ```
 
-**`src/selftest/` — in-kernel.** 14 bare-metal suites compiled in behind
+**`src/selftest/` — in-kernel.** 15 bare-metal suites compiled in behind
 `--features selftest`, run at early boot, exiting QEMU deterministically through
 `isa-debug-exit` (0x21 pass / 0x23 fail). Covers the frame allocator, PML4 paging and
 address-space isolation, the heap, scheduler lifecycle, VFS, speaker, PPM parser,
-calculator, terminal, agent/Spotlight/browser, Minesweeper, editor, Synth, and the
-network/chat path:
+calculator, terminal, agent/Spotlight/browser, Minesweeper, editor, Synth, the
+network/chat path, and the ELF loader and syscall MSRs:
 
 ```sh
 ./run_selftest.sh
@@ -166,5 +169,7 @@ run the scripts if you need current numbers.
   Start here for the engineering log.
 - [`PROJECT.md`](PROJECT.md) — architecture, feature inventory, and the two
   engineering invariants the kernel depends on.
+- [`docs/SYSCALL_ABI.md`](docs/SYSCALL_ABI.md) — the Ring 3 syscall interface and
+  ELF loader.
 - [`TEST_INFRA.md`](TEST_INFRA.md) — test framework and coverage matrix.
 - `src/arch/mod.rs` and `src/drivers/ring.rs` — those two invariants in code.
