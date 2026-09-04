@@ -55,6 +55,7 @@ Return values `>= 0` are results. Negative values are errors:
 | 13 | `fs_name` | `fs_name(i, buf, len) -> n` | Writes the path at `i`. |
 | 14 | `fs_read` | `fs_read(path, plen, buf, len) -> n` | |
 | 15 | `beep` | `beep(hz, ms) -> 0` | 20..20000 Hz, capped at 1000 ms. |
+| 16 | `spawn_fault` | `spawn_fault(kind) -> pid` | Spawns a process that faults on purpose. See below. |
 
 Example, from `src/task/userprogs.rs`:
 
@@ -127,8 +128,14 @@ surface, and clips the blit to the smaller of the surface and the client rect.
 
 The surface is 640x384 ARGB, fixed rather than negotiated: resizing a window
 shows more or less of it instead of requiring a realloc and a protocol to
-announce the new size. One surface exists, for one Ring 3 GUI process;
-supporting several means keying the statics in `src/gui/surface.rs` by PID.
+announce the new size. Up to four processes hold one at a time, keyed by PID;
+each is allocated on first use and mapped at the same user address in every
+address space, since each process has its own.
+
+The compositor never holds the surface lock across a blit. It copies the frame
+list under a brief guarded lock and reads pixels without one — holding it would
+deadlock against `SYS_SURFACE_MAP`, which takes the same lock from syscall
+context where `IF` is already masked and so cannot be preempted out of the way.
 
 ## Input: event polling
 
@@ -166,6 +173,22 @@ The queue is a fixed-capacity ring, not a `VecDeque`, for the reason
 context with interrupts masked, and a growable collection allocates on push. It
 drops the oldest event when full, so a process that stops polling cannot stall
 the compositor.
+
+## `spawn_fault`, and what it costs
+
+`SYS_SPAWN_FAULT` asks the kernel to create a Ring 3 process that faults on
+purpose: 0 null dereference, 1 divide by zero, 2 write into kernel space,
+3 invalid opcode. It exists so the Crash-Test demo can live in Ring 3 — the
+app's whole point is watching *another* process die while the desktop keeps
+running, which it cannot demonstrate by faulting itself.
+
+Two things about it are worth stating plainly rather than discovering later.
+It is a process-creation primitive exposed to userspace with **no permission
+model**: any Ring 3 process can call it, which is tolerable only because this
+kernel has no notion of privilege beyond the ring boundary yet. And it does real
+work — a kernel stack, an address space, several frames — with interrupts
+masked, adding that time to interrupt latency. Both are acceptable for a demo
+behind a button press and would not be for a general `spawn`.
 
 ## ELF loading
 

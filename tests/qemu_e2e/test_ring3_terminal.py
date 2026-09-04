@@ -14,6 +14,9 @@ import time
 from .harness import QemuHarness
 
 
+from .ring3_util import click, move_to
+
+
 def _type_line(qemu: QemuHarness, text: str):
     for ch in text:
         qemu.send_key("spc" if ch == " " else ch)
@@ -40,24 +43,8 @@ def test_ring3_terminal_runs_and_is_isolated(qemu: QemuHarness):
     # 2. Raise it. The window opens beneath the in-kernel ones so it does not
     #    disturb the desktop the other suites expect, so focus it by clicking
     #    the strip of titlebar left exposed on the right.
-    # Steps of 4 deliberately: the PS/2 driver's acceleration curve is 1:1 only
-    # below 5 counts, so a larger step moves the cursor further than it counts.
-    qemu.execute_monitor("mouse_move -2000 -2000")
-    time.sleep(0.05)
-    cur_x, cur_y = 0, 0
-    target_x, target_y = 1130, 312
-    while cur_x < target_x or cur_y < target_y:
-        step_x = min(4, target_x - cur_x)
-        step_y = min(4, target_y - cur_y)
-        qemu.execute_monitor(f"mouse_move {step_x} {step_y}")
-        cur_x += step_x
-        cur_y += step_y
-        time.sleep(0.003)
-    time.sleep(0.15)
-    qemu.execute_monitor("mouse_button 1")
-    time.sleep(0.05)
-    qemu.execute_monitor("mouse_button 0")
-    time.sleep(0.5)
+    move_to(qemu, 1130, 312)
+    click(qemu)
 
     before = qemu.screendump()
     assert before.width == 1280 and before.height == 800

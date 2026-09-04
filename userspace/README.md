@@ -3,18 +3,20 @@
 Programs that run as user processes on AegisOS, outside the kernel's privilege
 level and outside its address space.
 
-`aegis_user_terminal` is the AegisOS Terminal, ported out of `src/apps/terminal.rs`.
-It is not kernel code: it cannot call a kernel function, cannot read kernel
-memory, and reaches system state only through the syscalls documented in
-[`../docs/SYSCALL_ABI.md`](../docs/SYSCALL_ABI.md).
+Two programs, sharing one library. Neither is kernel code: they cannot call a
+kernel function, cannot read kernel memory, and reach system state only through
+the syscalls documented in [`../docs/SYSCALL_ABI.md`](../docs/SYSCALL_ABI.md).
 
 | File | |
 |---|---|
-| `src/main.rs` | The terminal: line buffer, input handling, command dispatch |
-| `src/rt.rs` | `_start` and the panic handler — there is no libc under this |
+| `src/bin/terminal.rs` | The Terminal, ported from `src/apps/terminal.rs` |
+| `src/bin/crash_test.rs` | Crash-Test, ported from `src/apps/crash_test.rs` |
+| `src/lib.rs` | Shared library root |
 | `src/sys.rs` | Syscall shims |
 | `src/surface.rs` | Drawing into the window surface the kernel maps |
 | `src/font.rs` | Text rendering, sharing glyph data with the kernel |
+| `src/text.rs` | Colours and allocation-free formatting |
+| `src/rt.rs` | `_start` and the panic handler — included per binary, not in the library, so each program gets exactly one of each |
 | `linker.ld` | Links at `0x400000`, lower half, three segments |
 
 ## Building
@@ -45,8 +47,7 @@ across a context switch would be silently corrupted.
 **64 KiB of stack, no guard page.** Enough for the fixed buffers here; an
 overflow faults into whatever is mapped below rather than reliably into a hole.
 
-**One surface.** The kernel maps a single 640x384 window surface, for a single
-Ring 3 GUI process.
+**Surfaces are 640x384.** The kernel maps one per process, up to four at once.
 
 ## Toolbar
 

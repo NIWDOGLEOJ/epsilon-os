@@ -68,7 +68,8 @@ pub const USER_CRASH_CODE: [u8; 106] = [
     0x62, 0x65, 0x72, 0x61, 0x74, 0x65, 0x6c, 0x79, 0x2e, 0x0a,
 ];
 
-/// The Ring 3 terminal, built from the `userspace/` crate by `build.rs` and
-/// embedded here. Unlike the hand-assembled payloads above this is a real
-/// compiled program with its own linker script, `.rodata` and `.bss`.
-pub const TERMINAL_ELF: &[u8] = include_bytes!(env!("AEGIS_USER_TERMINAL_ELF"));
+/// Ring 3 programs, built from the `userspace/` crate by `build.rs` and embedded
+/// here. Unlike the hand-assembled payloads above these are real compiled
+/// programs with their own linker script, `.rodata` and `.bss`.
+pub const TERMINAL_ELF: &[u8] = include_bytes!(env!("AEGIS_TERMINAL_ELF"));
+pub const CRASH_TEST_ELF: &[u8] = include_bytes!(env!("AEGIS_CRASH_TEST_ELF"));

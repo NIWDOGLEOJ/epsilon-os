@@ -12,26 +12,16 @@
 //! Deliberately allocation-free. Fixed-size buffers mean no heap, no allocator
 //! to write, and no way for a runaway command to exhaust memory.
 
-mod font;
+#[path = "../rt.rs"]
 mod rt;
-mod surface;
-mod sys;
 
-use font::{FONT_HEIGHT, FONT_WIDTH};
-use surface::Surface;
-
-// ARGB, matching the kernel's Color conventions.
-const COLOR_BG: u32 = 0xFF10_1418;
-const COLOR_FG: u32 = 0xFFD0_D8E0;
-const COLOR_PROMPT: u32 = 0xFF4C_D964;
-const COLOR_ERROR: u32 = 0xFFFF_5F56;
-const COLOR_HEADING: u32 = 0xFF5A_C8FA;
-const COLOR_CURSOR: u32 = 0xFFD0_D8E0;
-
-const COLOR_BUTTON: u32 = 0xFF2A_313A;
-const COLOR_BUTTON_HOVER: u32 = 0xFF3D_4753;
-const COLOR_BUTTON_DANGER: u32 = 0xFF5A_2A2A;
-const COLOR_BUTTON_EDGE: u32 = 0xFF4A_545F;
+use aegis_user::font::{FONT_HEIGHT, FONT_WIDTH};
+use aegis_user::surface::Surface;
+use aegis_user::sys;
+use aegis_user::text::{
+    push_str, push_u64, COLOR_BG, COLOR_BUTTON, COLOR_BUTTON_DANGER, COLOR_BUTTON_EDGE,
+    COLOR_BUTTON_HOVER, COLOR_CURSOR, COLOR_ERROR, COLOR_FG, COLOR_HEADING, COLOR_PROMPT,
+};
 
 const MAX_COLS: usize = 96;
 const MAX_ROWS: usize = 32;
@@ -208,42 +198,6 @@ impl Terminal {
             fb.draw_text(label_x, label_y, button.label.as_bytes(), label_color, None);
         }
     }
-}
-
-// -----------------------------------------------------------------------------
-// Formatting helpers (no allocator, so no `format!`)
-// -----------------------------------------------------------------------------
-
-/// Appends `value` in decimal to `buf` at `pos`, returning the new position.
-fn push_u64(buf: &mut [u8], mut pos: usize, value: u64) -> usize {
-    let mut digits = [0u8; 20];
-    let mut count = 0;
-    let mut v = value;
-    loop {
-        digits[count] = b'0' + (v % 10) as u8;
-        count += 1;
-        v /= 10;
-        if v == 0 {
-            break;
-        }
-    }
-    while count > 0 && pos < buf.len() {
-        count -= 1;
-        buf[pos] = digits[count];
-        pos += 1;
-    }
-    pos
-}
-
-fn push_str(buf: &mut [u8], mut pos: usize, s: &[u8]) -> usize {
-    for &b in s {
-        if pos >= buf.len() {
-            break;
-        }
-        buf[pos] = b;
-        pos += 1;
-    }
-    pos
 }
 
 /// Splits `input` into the command word and the remainder.

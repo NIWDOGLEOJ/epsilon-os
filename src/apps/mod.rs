@@ -110,7 +110,7 @@ impl AppSuite {
             AppId::AboutDialog => self.about.render(win, fb),
             // Content for this window is produced by a Ring 3 process, which
             // draws into a shared surface the kernel only reads.
-            AppId::UserTerminal => render_user_surface(win, fb),
+            AppId::UserTerminal | AppId::UserCrashTest => render_user_surface(win, fb),
         }
     }
 
@@ -173,7 +173,7 @@ impl AppSuite {
             }
             // A Ring 3 window takes no kernel-side click handling; the process
             // owns everything inside its client rect.
-            AppId::UserTerminal => AppAction::None,
+            AppId::UserTerminal | AppId::UserCrashTest => AppAction::None,
             AppId::AboutDialog => {
                 if self.about.handle_click(win, x, y) {
                     AppAction::CloseWindow
@@ -259,10 +259,15 @@ fn render_user_surface(win: &Window, fb: &mut Framebuffer) {
 
     let rect = win.client_rect();
 
+    // A Ring 3 window without a PID has no surface to read.
+    let Some(pid) = win.pid else {
+        return;
+    };
+
     // Snapshot the frame list, then blit without holding the lock -- see
     // `surface::snapshot_frames` for why holding it here would deadlock.
     let mut frames = [PhysAddr::new(0); SURFACE_FRAME_COUNT];
-    let count = snapshot_frames(&mut frames);
+    let count = snapshot_frames(pid, &mut frames);
     if count == 0 {
         return;
     }

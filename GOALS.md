@@ -23,7 +23,7 @@ documentation that reported success the code had not achieved (see
 | 1. Old hardware, modern software | Not started. The blocker is drivers, not design — see the driver gap below. |
 | 2. Intel & Ryzen 2020+ | Boots x86_64 under Limine with BIOS/UEFI support, which is the right foundation. But verified only in QEMU, and the driver set targets 1995-era peripherals. |
 | 3. Smooth and well optimized | True where it has been measured: TSC-calibrated pacing to a 16.667 ms frame budget, all software-rendered. No GPU acceleration, so this holds at 1280x800 in a VM and is untested at modern panel resolutions. |
-| 4. App crash ≠ OS crash | **True for the Terminal, which now runs in Ring 3 and survives its own crash without taking the desktop down.** The other thirteen apps still run in Ring 0. See below. |
+| 4. App crash ≠ OS crash | **True for the Terminal and Crash-Test, both now Ring 3 processes.** Crash-Test injects all four fault classes into other user processes and keeps drawing through every one. Twelve apps still run in Ring 0. See below. |
 | 5. Efficient resource usage | Genuinely strong: 16 MB used of 3064 MB at idle desktop. Offset by using one CPU core; there is no SMP support. |
 | 6. Support all Windows applications | First foundations exist: a syscall ABI and an ELF64 loader (see below). No PE loader and no Win32 surface. This is still the largest goal on the list by a wide margin. |
 | 7. macOS-like optimization | The desktop follows macOS visually. In the engineering sense — GPU compositing, unified memory handling, power management — none of that is present. |
@@ -61,8 +61,8 @@ The plan was three steps, and the first two have landed:
 2. **An ELF64 loader.** ✅ `ET_EXEC` images are parsed, bounds-checked, and
    mapped with per-segment permissions, so a process is a file rather than a
    byte array.
-3. **Move one application across the boundary.** ✅ The Terminal now runs in
-   Ring 3, as a separately compiled program in `userspace/` loaded from an ELF
+3. **Move applications across the boundary.** ✅ The Terminal and Crash-Test
+   now run in Ring 3, as a separately compiled program in `userspace/` loaded from an ELF
    image into its own address space. It draws through a shared surface, reads
    input through `SYS_POLL_EVENT`, and reaches system state — process list,
    memory stats, the VFS, the PC speaker — only through syscalls.
@@ -73,22 +73,23 @@ prints through `SYS_WRITE` and exits with status 0; a second makes a syscall and
 live kernel state, then dereferences null on command and dies alone, with the
 desktop still compositing and no kernel panic.
 
-**Goal 4 is now true of an application, not just of a demonstration.** It is not
-yet true of the desktop: thirteen apps remain in Ring 0, and a panic in any of
-them still reaches the kernel panic handler.
+**Goal 4 is now true of applications, not just of a demonstration.** Crash-Test
+is the sharper case: the app making the claim is itself subject to it, and
+survives injecting every fault class into other user processes. It is not yet
+true of the desktop — twelve apps remain in Ring 0, and a panic in any of them
+still reaches the kernel panic handler.
 
-### What the remaining thirteen would need
+### What the remaining twelve would need
 
 The terminal was the cheap one — it is mostly text. Porting the rest needs ABI
 that does not exist yet:
 
-- ~~**Mouse events.**~~ Done. `poll_event` now delivers motion and button
-  events with client-relative coordinates, and the Ring 3 terminal uses them for
-  a hover-highlighting clickable toolbar. No wheel or double-click yet.
+- ~~**Mouse events.**~~ Done. `poll_event` delivers motion and button events
+  with client-relative coordinates. No wheel or double-click yet.
+- ~~**More than one surface.**~~ Done. Up to four processes hold a surface,
+  keyed by PID.
 - **Writable VFS.** `fs_read` exists; there is no `fs_write`, `fs_create` or
   `fs_remove`, so AegisPad and Paint cannot save.
-- **More than one surface.** One surface exists, for one process. Two Ring 3
-  GUI apps would need it keyed by PID.
 - **A heap.** The Ring 3 terminal is allocation-free by design; anything with
   variable-length state needs a userspace allocator, and `brk`/`mmap` to back
   it.
@@ -165,7 +166,7 @@ good:
   the kernel deadlocked on boot.
 - A userspace ABI and an ELF64 loader, so Ring 3 is somewhere real programs can
   run rather than only somewhere payloads go to crash.
-- One real application actually living there, with the crash-isolation guarantee
-  demonstrated on it rather than on a purpose-built payload.
+- Two real applications living there, with the crash-isolation guarantee
+  demonstrated on them rather than on a purpose-built payload.
 
 The kernel core is sound. What is missing is breadth, not depth.

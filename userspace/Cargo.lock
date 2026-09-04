@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "aegis_user_terminal"
+name = "aegis_user"
 version = "0.1.0"

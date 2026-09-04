@@ -1,9 +1,14 @@
 //! Minimal Ring 3 runtime: entry point and panic handling.
 //!
+//! Included directly by each binary with `#[path]` rather than living in the
+//! library, so that every program gets exactly one `_start` and one
+//! `#[panic_handler]` and the linker is never asked to pull them out of an
+//! rlib.
+//!
 //! There is no libc and no crt0 beneath this. The kernel's ELF loader sets
 //! `rsp` to the top of a one-page stack and jumps straight to `_start`.
 
-use crate::sys;
+use aegis_user::sys;
 
 /// Process entry point, named to match `ENTRY(_start)` in `linker.ld`.
 ///

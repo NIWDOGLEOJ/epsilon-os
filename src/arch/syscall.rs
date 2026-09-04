@@ -226,6 +226,7 @@ pub const SYS_FS_COUNT: u64 = 12;
 pub const SYS_FS_NAME: u64 = 13;
 pub const SYS_FS_READ: u64 = 14;
 pub const SYS_BEEP: u64 = 15;
+pub const SYS_SPAWN_FAULT: u64 = 16;
 
 /// Negative return codes. Chosen to be recognisable rather than to match errno.
 #[repr(i64)]
@@ -471,6 +472,7 @@ pub extern "C" fn syscall_dispatch(num: u64, a1: u64, a2: u64, a3: u64, _a4: u64
         SYS_FS_NAME => sys_fs_name(a1 as usize, a2, a3 as usize),
         SYS_FS_READ => sys_fs_read(a1, a2, a3, _a4 as usize),
         SYS_BEEP => sys_beep(a1 as u32, a2 as u32),
+        SYS_SPAWN_FAULT => sys_spawn_fault(a1 as usize),
         _ => SysError::NoSys as i64 as u64,
     }
 }
@@ -699,4 +701,26 @@ impl core::fmt::Write for SliceWriter<'_> {
         self.pos += count;
         Ok(())
     }
+}
+
+/// Spawns a Ring 3 process that faults on purpose, returning its PID.
+///
+/// This is what lets the Crash-Test demo live in Ring 3. The app's whole point
+/// is watching *another* process die while the desktop keeps running, which it
+/// cannot demonstrate by faulting itself.
+///
+/// Two things worth being explicit about. It is a process-creation primitive
+/// exposed to userspace with no permission model: any Ring 3 process can call
+/// it, which is acceptable only because this kernel has no notion of privilege
+/// beyond the ring boundary yet. And it does real work -- allocating a kernel
+/// stack, an address space and several frames -- with interrupts masked, so it
+/// adds that time to interrupt latency. Both are fine for a demo triggered by a
+/// button press and would not be for a general `spawn`.
+fn sys_spawn_fault(kind: usize) -> u64 {
+    // 0..3 are the four fault classes; anything else would spawn the benign
+    // calculation loop, which is not what this call is for.
+    if kind > 3 {
+        return SysError::Invalid as i64 as u64;
+    }
+    crate::task::spawn_user_fault_test(kind)
 }

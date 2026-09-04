@@ -227,3 +227,13 @@ pub fn fs_read(path: &str, buf: &mut [u8]) -> i64 {
 pub fn beep(freq_hz: u32, duration_ms: u32) -> i64 {
     unsafe { syscall2(SYS_BEEP, freq_hz as u64, duration_ms as u64) as i64 }
 }
+
+pub const SYS_SPAWN_FAULT: u64 = 16;
+
+/// Asks the kernel to spawn a Ring 3 process that faults on purpose.
+///
+/// Returns the new PID, or a negative error. `kind` selects the fault: 0 null
+/// dereference, 1 divide by zero, 2 write into kernel space, 3 invalid opcode.
+pub fn spawn_fault(kind: u64) -> i64 {
+    unsafe { syscall1(SYS_SPAWN_FAULT, kind) as i64 }
+}

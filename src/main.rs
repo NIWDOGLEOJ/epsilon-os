@@ -248,6 +248,17 @@ pub extern "C" fn _start() -> ! {
         }
     };
 
+    let user_crashtest_pid = match task::spawn_user_elf("user_crashtest", task::userprogs::CRASH_TEST_ELF) {
+        Ok(pid) => {
+            serial_println!("[ELF] Ring 3 crash-test loaded as PID {}.", pid);
+            Some(pid)
+        }
+        Err(e) => {
+            serial_println!("[ELF] Failed to load Ring 3 crash-test: {}", e.as_str());
+            None
+        }
+    };
+
     let crash_image = task::elf::build_test_image(&task::userprogs::USER_CRASH_CODE, 0x40_0000);
     match task::spawn_user_elf("elf_crasher", &crash_image) {
         Ok(pid) => serial_println!("[ELF] Loaded 'elf_crasher' as PID {}.", pid),
@@ -281,6 +292,21 @@ pub extern "C" fn _start() -> ! {
             300,
             660,
             430,
+            Some(pid),
+        );
+    }
+
+    // Ring 3 Crash-Test. Like the Ring 3 terminal it is created before the
+    // in-kernel windows so it opens beneath them, and positioned so a strip of
+    // its titlebar stays exposed on the right for raising it.
+    if let Some(pid) = user_crashtest_pid {
+        wm.create_window(
+            AppId::UserCrashTest,
+            "Crash-Test (Ring 3)",
+            700,
+            35,
+            560,
+            250,
             Some(pid),
         );
     }
@@ -385,6 +411,9 @@ pub extern "C" fn _start() -> ! {
             AppId::UserTerminal => {
                 wm.create_window(AppId::UserTerminal, "Terminal (Ring 3)", 500, 250, 660, 420, None);
             }
+            AppId::UserCrashTest => {
+                wm.create_window(AppId::UserCrashTest, "Crash-Test (Ring 3)", 700, 35, 560, 250, None);
+            }
             AppId::AboutDialog => {
                 wm.create_window(AppId::AboutDialog, "About AegisOS", 340, 200, 340, 300, None);
             }
@@ -416,7 +445,7 @@ pub extern "C" fn _start() -> ! {
                     wm.handle_mouse_move(x, y);
                     if let Some(focused) = wm.focused_window() {
                         let rect = focused.client_rect();
-                        if focused.app_id == AppId::UserTerminal {
+                        if matches!(focused.app_id, AppId::UserTerminal | AppId::UserCrashTest) {
                             // Deliver motion to the Ring 3 process whenever the
                             // pointer is over its client area, dragging or not:
                             // a user program needs hover, not just clicks.
@@ -453,7 +482,7 @@ pub extern "C" fn _start() -> ! {
                             WmAction::WindowFocused(wid) => {
                                 if let Some(win) = wm.windows.iter().find(|w| w.id == wid) {
                                     let rect = win.client_rect();
-                                    if win.app_id == AppId::UserTerminal {
+                                    if matches!(win.app_id, AppId::UserTerminal | AppId::UserCrashTest) {
                                         // The process owns everything inside its
                                         // client rect. The window manager has
                                         // already taken the titlebar and the
@@ -520,7 +549,7 @@ pub extern "C" fn _start() -> ! {
                         if let Some(focused) = wm.focused_window() {
                             let rect = focused.client_rect();
                             if rect.contains(x, y) {
-                                if focused.app_id == AppId::UserTerminal {
+                                if matches!(focused.app_id, AppId::UserTerminal | AppId::UserCrashTest) {
                                     task::uevent::post_mouse(
                                         x - rect.x,
                                         y - rect.y,
@@ -539,7 +568,7 @@ pub extern "C" fn _start() -> ! {
                     // manager clears drag state, so it can pair the up with its
                     // own down even if the pointer left the client area.
                     if let Some(focused) = wm.focused_window() {
-                        if focused.app_id == AppId::UserTerminal {
+                        if matches!(focused.app_id, AppId::UserTerminal | AppId::UserCrashTest) {
                             let rect = focused.client_rect();
                             task::uevent::post_mouse(
                                 x - rect.x,
@@ -600,7 +629,7 @@ pub extern "C" fn _start() -> ! {
             // Normal application keyboard dispatch
             if let Some(focused) = wm.focused_window() {
                 let app_id = focused.app_id;
-                if app_id == AppId::UserTerminal {
+                if matches!(app_id, AppId::UserTerminal | AppId::UserCrashTest) {
                     // A Ring 3 window's keys go to the process, not to kernel
                     // code. It collects them with SYS_POLL_EVENT.
                     task::uevent::post_key(&key_ev);
@@ -617,7 +646,7 @@ pub extern "C" fn _start() -> ! {
         //     user process only ever receives input while it has focus.
         let focused_user_pid = wm
             .focused_window()
-            .filter(|w| w.app_id == AppId::UserTerminal)
+            .filter(|w| matches!(w.app_id, AppId::UserTerminal | AppId::UserCrashTest))
             .and_then(|w| w.pid);
         task::uevent::set_target(focused_user_pid);
 

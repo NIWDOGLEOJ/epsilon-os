@@ -18,8 +18,12 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Userspace programs to build, as (crate directory, binary name).
-const USER_PROGRAMS: &[(&str, &str)] = &[("userspace", "aegis_user_terminal")];
+/// Userspace binaries to build, as (crate directory, binary name). All live in
+/// one crate so they can share `lib.rs`; each is a separate `[[bin]]` target.
+const USER_PROGRAMS: &[(&str, &str)] = &[
+    ("userspace", "aegis_terminal"),
+    ("userspace", "aegis_crash_test"),
+];
 
 fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -60,6 +64,8 @@ fn main() {
             "--release",
             "--target",
             "x86_64-unknown-none",
+            "--bin",
+            bin,
             "--manifest-path",
         ])
         .arg(&manifest)
